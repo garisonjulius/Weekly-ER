@@ -1,0 +1,59 @@
+name: Weekly Earnings Scrape
+
+on:
+  schedule:
+    # Every Sunday at 6:00 AM PST (2:00 PM UTC)
+    - cron: "0 14 * * 0"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Set up Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Write Google credentials
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
+        env:
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+
+      - name: Step 1 - Reset Google Sheets
+        run: python reset.py
+        env:
+          GOOGLE_CREDENTIALS_PATH: credentials.json
+
+      - name: Step 2 - Scrape Zacks earnings calendar
+        run: python next_week_tickers.py
+
+      - name: Step 3 - Scrape Yahoo Finance earnings
+        run: |
+          NEXT_MONDAY=$(python -c "from datetime import date, timedelta; d = date.today(); print(d + timedelta(days=(7 - d.weekday()) % 7 or 7))")
+          echo "Scraping earnings starting $NEXT_MONDAY"
+          python yahoo.py "$NEXT_MONDAY" 5
+
+      - name: Step 4 - Merge tickers and generate CSVs
+        run: python merge_tickers.py
+        env:
+          GOOGLE_CREDENTIALS_PATH: credentials.json
+
+      - name: Step 5 - Run Browse AI robots
+        run: python run_robots.py
+        env:
+          BROWSE_AI_API_KEY: ${{ secrets.BROWSE_AI_API_KEY }}
+          GOOGLE_CREDENTIALS_PATH: credentials.json
