@@ -181,16 +181,36 @@ def run_yahoo_finance(robot_id, urls):
         resp.raise_for_status()
         bulk_status = resp.json()
         bulk_run_result = bulk_status["result"]["bulkRun"]
-        done = bulk_run_result.get("successfulTasks", 0) + bulk_run_result.get("failedTasks", 0)
-        print(f"Progress: {done}/{total}")
+        successful = bulk_run_result.get("successfulTasks", 0)
+        failed = bulk_run_result.get("failedTasks", 0)
+        done = successful + failed
+        print(f"Progress: {done}/{total} (success: {successful}, failed: {failed})")
 
         if done >= total:
             break
 
-    tasks = bulk_status["result"].get("robotTasks", {}).get("items", [])
+    # Fetch all tasks with pagination
+    all_tasks = []
+    page = 1
+    while True:
+        resp = requests.get(
+            f"{API_BASE}/robots/{robot_id}/bulk-runs/{bulk_run_id}",
+            headers=HEADERS,
+            params={"page": page},
+        )
+        if resp.status_code == 404:
+            break
+        resp.raise_for_status()
+        data = resp.json()
+        tasks = data["result"].get("robotTasks", {}).get("items", [])
+        if not tasks:
+            break
+        all_tasks.extend(tasks)
+        print(f"Fetched page {page} ({len(tasks)} tasks)")
+        page += 1
 
     rows = []
-    for task in tasks:
+    for task in all_tasks:
         input_url = task.get("inputParameters", {}).get("originUrl", "")
         ticker, screenshot_url = extract_from_task(task, input_url)
 
