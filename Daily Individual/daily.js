@@ -469,7 +469,7 @@ async function scrapeYahooLosers(browser, retries = 2) {
           'fin-streamer[data-field="regularMarketChangePercent"]',
         );
         if (pctStreamer) {
-          changePct = pctStreamer.textContent.trim();
+          changePct = pctStreamer.textContent.trim().replace(/[()]/g, "");
         } else {
           // Fallback: look through cells for a percentage value
           const cells = row.querySelectorAll("td");
@@ -747,6 +747,19 @@ async function main() {
       console.log("-".repeat(30));
 
       const row = await scrapeTickerData(symbol, browser, changePct);
+
+      // Skip stocks with RSI > 70 or Recom > 2
+      const rsiVal = parseFloat(row[24]);
+      const recomVal = parseFloat(row[27]);
+      if (rsiVal > 70) {
+        console.log(`⏭️ Skipping ${symbol}: RSI ${rsiVal} > 70`);
+        continue;
+      }
+      if (recomVal > 2) {
+        console.log(`⏭️ Skipping ${symbol}: Recom ${recomVal} > 2`);
+        continue;
+      }
+
       await uploadRowToGoogleSheet(row);
 
       if (i < entries.length - 1) {
