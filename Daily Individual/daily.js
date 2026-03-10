@@ -421,83 +421,88 @@ async function scrapeYahooLosers(browser, retries = 2) {
   const url = "https://finance.yahoo.com/markets/stocks/losers/";
 
   for (let attempt = 1; attempt <= retries; attempt++) {
-  try {
-    if (attempt > 1) {
-      console.log(`🔄 Retry attempt ${attempt}/${retries}...`);
-      await wait(5000);
-    }
-    const page = await browser.newPage();
-    await page.setUserAgent(
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    );
-    await page.setViewport({ width: 1920, height: 1080 });
-    await page.setRequestInterception(true);
-    page.on("request", (req) => {
-      const type = req.resourceType();
-      if (type === "image" || type === "stylesheet" || type === "font") {
-        req.abort();
-      } else {
-        req.continue();
+    try {
+      if (attempt > 1) {
+        console.log(`🔄 Retry attempt ${attempt}/${retries}...`);
+        await wait(5000);
       }
-    });
-
-    // Use domcontentloaded instead of networkidle2 — Yahoo loads data dynamically
-    // and networkidle2 can time out on CI runners
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
-    // Wait for the table to appear
-    await page.waitForSelector("table tbody tr", { timeout: 30000 }).catch(() => null);
-    await wait(5000);
-
-    const results = await page.evaluate(() => {
-      const items = [];
-      const rows = document.querySelectorAll("table tbody tr");
-      for (const row of rows) {
-        const symbolEl =
-          row.querySelector("td:first-child a fin-streamer[data-symbol]") ||
-          row.querySelector(
-            'td:first-child a[data-testid="table-cell-ticker"]',
-          ) ||
-          row.querySelector("td:first-child a");
-        if (!symbolEl) continue;
-        const symbol =
-          symbolEl.getAttribute("data-symbol") || symbolEl.textContent.trim();
-        if (!symbol || !/^[A-Z]{1,5}$/.test(symbol)) continue;
-
-        // Change % is typically in the 5th column (index 4) or a fin-streamer with data-field="regularMarketChangePercent"
-        let changePct = null;
-        const pctStreamer = row.querySelector(
-          'fin-streamer[data-field="regularMarketChangePercent"]',
-        );
-        if (pctStreamer) {
-          changePct = pctStreamer.textContent.trim().replace(/[()]/g, "");
+      const page = await browser.newPage();
+      await page.setUserAgent(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      );
+      await page.setViewport({ width: 1920, height: 1080 });
+      await page.setRequestInterception(true);
+      page.on("request", (req) => {
+        const type = req.resourceType();
+        if (type === "image" || type === "stylesheet" || type === "font") {
+          req.abort();
         } else {
-          // Fallback: look through cells for a percentage value
-          const cells = row.querySelectorAll("td");
-          for (const cell of cells) {
-            const text = cell.textContent.trim();
-            if (/^[+-]?[\d.]+%$/.test(text)) {
-              changePct = text;
-              break;
+          req.continue();
+        }
+      });
+
+      // Use domcontentloaded instead of networkidle2 — Yahoo loads data dynamically
+      // and networkidle2 can time out on CI runners
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
+      // Wait for the table to appear
+      await page
+        .waitForSelector("table tbody tr", { timeout: 30000 })
+        .catch(() => null);
+      await wait(5000);
+
+      const results = await page.evaluate(() => {
+        const items = [];
+        const rows = document.querySelectorAll("table tbody tr");
+        for (const row of rows) {
+          const symbolEl =
+            row.querySelector("td:first-child a fin-streamer[data-symbol]") ||
+            row.querySelector(
+              'td:first-child a[data-testid="table-cell-ticker"]',
+            ) ||
+            row.querySelector("td:first-child a");
+          if (!symbolEl) continue;
+          const symbol =
+            symbolEl.getAttribute("data-symbol") || symbolEl.textContent.trim();
+          if (!symbol || !/^[A-Z]{1,5}$/.test(symbol)) continue;
+
+          // Change % is typically in the 5th column (index 4) or a fin-streamer with data-field="regularMarketChangePercent"
+          let changePct = null;
+          const pctStreamer = row.querySelector(
+            'fin-streamer[data-field="regularMarketChangePercent"]',
+          );
+          if (pctStreamer) {
+            changePct = pctStreamer.textContent.trim().replace(/[()]/g, "");
+          } else {
+            // Fallback: look through cells for a percentage value
+            const cells = row.querySelectorAll("td");
+            for (const cell of cells) {
+              const text = cell.textContent.trim();
+              if (/^[+-]?[\d.]+%$/.test(text)) {
+                changePct = text;
+                break;
+              }
             }
           }
+
+          items.push({ symbol, changePct });
         }
+        return items.slice(0, 25);
+      });
 
-        items.push({ symbol, changePct });
-      }
-      return items.slice(0, 25);
-    });
+      await page.close();
 
-    await page.close();
-
-    console.log(
-      `✅ Found ${results.length} losers: ${results.map((r) => `${r.symbol} (${r.changePct})`).join(", ")}`,
-    );
-    if (results.length > 0) return results;
-    console.log("⚠️ No results found, will retry...");
-    await page.close();
-  } catch (error) {
-    console.error(`❌ Error scraping Yahoo losers (attempt ${attempt}/${retries}):`, error.message);
-  }
+      console.log(
+        `✅ Found ${results.length} losers: ${results.map((r) => `${r.symbol} (${r.changePct})`).join(", ")}`,
+      );
+      if (results.length > 0) return results;
+      console.log("⚠️ No results found, will retry...");
+      await page.close();
+    } catch (error) {
+      console.error(
+        `❌ Error scraping Yahoo losers (attempt ${attempt}/${retries}):`,
+        error.message,
+      );
+    }
   } // end retry loop
   return [];
 }
@@ -748,15 +753,15 @@ async function main() {
 
       const row = await scrapeTickerData(symbol, browser, changePct);
 
-      // Skip stocks with RSI > 70 or Recom > 2
+      // Skip stocks with RSI >= 70 or Recom >= 2
       const rsiVal = parseFloat(row[24]);
       const recomVal = parseFloat(row[27]);
-      if (rsiVal > 70) {
-        console.log(`⏭️ Skipping ${symbol}: RSI ${rsiVal} > 70`);
+      if (rsiVal >= 70) {
+        console.log(`⏭️ Skipping ${symbol}: RSI ${rsiVal} >= 70`);
         continue;
       }
-      if (recomVal > 2) {
-        console.log(`⏭️ Skipping ${symbol}: Recom ${recomVal} > 2`);
+      if (recomVal >= 2) {
+        console.log(`⏭️ Skipping ${symbol}: Recom ${recomVal} >= 2`);
         continue;
       }
 

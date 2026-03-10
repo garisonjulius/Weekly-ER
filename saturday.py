@@ -14,17 +14,17 @@ def run(cmd, description):
         sys.exit(1)
 
 
-def get_next_monday():
-    """Calculate next Monday's date."""
+def get_next_next_monday():
+    """Calculate the Monday after next (skip the upcoming week)."""
     today = date.today()
     days_ahead = (7 - today.weekday()) % 7
     if days_ahead == 0:
         days_ahead = 7
-    return (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+    return (today + timedelta(days=days_ahead + 7)).strftime("%Y-%m-%d")
 
 
 def main():
-    next_monday = get_next_monday()
+    next_monday = get_next_next_monday()
     print(f"Next Monday: {next_monday}")
 
     # Step 1: Scrape Zacks earnings calendar
