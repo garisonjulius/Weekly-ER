@@ -43,3 +43,20 @@ jobs:
         env:
           BROWSE_AI_API_KEY: ${{ secrets.BROWSE_AI_API_KEY }}
           GOOGLE_CREDENTIALS_PATH: credentials.json
+
+      - name: Notify Slack
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+
+          if [ "$STATUS" = "success" ]; then
+            EMOJI="✅"
+          else
+            EMOJI="❌"
+          fi
+
+          curl -X POST -H 'Content-type: application/json' \
+          --data "{
+            \"text\": \"$EMOJI GitHub Action Finished\nRepo: ${{ github.repository }}\nWorkflow: ${{ github.workflow }}\nStatus: $STATUS\nRun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+          }" \
+          ${{ secrets.SLACK_WEBHOOK_URL }}
