@@ -415,12 +415,17 @@ async function scrapeFinvizData(ticker, browser) {
   }
 }
 
-// Scrape Yahoo Finance top 25 losers
-async function scrapeYahooLosers(browser) {
+// Scrape Yahoo Finance top 25 losers (with retry)
+async function scrapeYahooLosers(browser, retries = 2) {
   console.log("🔍 Scraping Yahoo Finance top 25 losers...");
   const url = "https://finance.yahoo.com/markets/stocks/losers/";
 
+  for (let attempt = 1; attempt <= retries; attempt++) {
   try {
+    if (attempt > 1) {
+      console.log(`🔄 Retry attempt ${attempt}/${retries}...`);
+      await wait(5000);
+    }
     const page = await browser.newPage();
     await page.setUserAgent(
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -436,8 +441,12 @@ async function scrapeYahooLosers(browser) {
       }
     });
 
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-    await wait(3000);
+    // Use domcontentloaded instead of networkidle2 — Yahoo loads data dynamically
+    // and networkidle2 can time out on CI runners
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
+    // Wait for the table to appear
+    await page.waitForSelector("table tbody tr", { timeout: 30000 }).catch(() => null);
+    await wait(5000);
 
     const results = await page.evaluate(() => {
       const items = [];
@@ -483,11 +492,14 @@ async function scrapeYahooLosers(browser) {
     console.log(
       `✅ Found ${results.length} losers: ${results.map((r) => `${r.symbol} (${r.changePct})`).join(", ")}`,
     );
-    return results;
+    if (results.length > 0) return results;
+    console.log("⚠️ No results found, will retry...");
+    await page.close();
   } catch (error) {
-    console.error("❌ Error scraping Yahoo losers:", error.message);
-    return [];
+    console.error(`❌ Error scraping Yahoo losers (attempt ${attempt}/${retries}):`, error.message);
   }
+  } // end retry loop
+  return [];
 }
 
 // Build data row for a single ticker (returns array, does not upload)
