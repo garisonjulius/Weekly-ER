@@ -32,3 +32,20 @@ jobs:
         run: node "Daily Individual/daily.js" --losers
         env:
           GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
+
+      - name: Notify Slack
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+
+          if [ "$STATUS" = "success" ]; then
+            EMOJI="✅"
+          else
+            EMOJI="❌"
+          fi
+
+          curl -X POST -H 'Content-type: application/json' \
+          --data "{
+            \"text\": \"$EMOJI GitHub Action Finished\nRepo: ${{ github.repository }}\nWorkflow: ${{ github.workflow }}\nStatus: $STATUS\nRun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+          }" \
+          ${{ secrets.SLACK_WEBHOOK_URL }}
