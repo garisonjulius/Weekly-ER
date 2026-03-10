@@ -753,15 +753,15 @@ async function main() {
 
       const row = await scrapeTickerData(symbol, browser, changePct);
 
-      // Skip stocks with RSI >= 70 or Recom >= 2
+      // Skip stocks with RSI >= 70 or Recom >= 1.5
       const rsiVal = parseFloat(row[24]);
       const recomVal = parseFloat(row[27]);
       if (rsiVal >= 70) {
         console.log(`⏭️ Skipping ${symbol}: RSI ${rsiVal} >= 70`);
         continue;
       }
-      if (recomVal >= 2) {
-        console.log(`⏭️ Skipping ${symbol}: Recom ${recomVal} >= 2`);
+      if (recomVal >= 1.5) {
+        console.log(`⏭️ Skipping ${symbol}: Recom ${recomVal} >= 1.5`);
         continue;
       }
 
