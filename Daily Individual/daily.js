@@ -208,9 +208,18 @@ async function scrapeZacksData(ticker, browser) {
         industry = industry.replace(/^Industry:\s*/i, "");
       }
 
-      // AMC/BMO and Earnings Date: populated from Finviz in scrapeTickerData
+      // AMC/BMO and Earnings Date: from Zacks "Exp Earnings Date" section
+      // Format examples: "*BMO5/8/26", "5/7/26", "*AMC1/29/27"
       let amcBmo = null;
       let earningsDate = null;
+      const bodyText2 = document.body.textContent || "";
+      const expEarningsMatch = bodyText2.match(
+        /Exp\s*Earnings\s*Date[\s\S]*?(?:More\s*Info\s*)?(\*?(AMC|BMO))?([\d]{1,2}\/[\d]{1,2}\/[\d]{2,4})/i,
+      );
+      if (expEarningsMatch) {
+        if (expEarningsMatch[2]) amcBmo = expEarningsMatch[2].toUpperCase();
+        earningsDate = expEarningsMatch[3];
+      }
 
       // EPS Current Quarter: #detail_estimate table, "Current Quarter" row
       let epsCurrentQuarter = getTableCellByLabel(
@@ -339,7 +348,7 @@ async function scrapeFinvizData(ticker, browser) {
       // Company name from page title: "AAPL Apple Inc. Stock Quote" → "Apple Inc."
       let name = null;
       const title = document.title || "";
-      const titleMatch = title.match(/^[A-Z]{1,5}\s+(.+?)\s+Stock Quote/);
+      const titleMatch = title.match(/^[A-Z]{1,5}\s+(.+?)\s+Stock\s+Quote/);
       if (titleMatch) {
         name = titleMatch[1].trim();
       }
@@ -348,6 +357,13 @@ async function scrapeFinvizData(ticker, browser) {
         const rows = document.querySelectorAll(".fullview-title tr");
         if (rows.length > 1) name = rows[1]?.textContent?.trim() || null;
       }
+      if (!name) {
+        // Fallback: try broader title match (handles tickers of any length)
+        const broadMatch = title.match(/^\S+\s+(.+?)\s+Stock/);
+        if (broadMatch) name = broadMatch[1].trim();
+      }
+      // Clean up leading/trailing dashes and whitespace
+      if (name) name = name.replace(/^[\s\-–—]+|[\s\-–—]+$/g, "").trim();
       return { pageText: text, companyName: name };
     });
 
@@ -380,10 +396,21 @@ async function scrapeFinvizData(ticker, browser) {
       error.message,
     );
     return {
-      companyName: null, pe: null, forwardPE: null, peg: null,
-      roe: null, roic: null, profitMargin: null, debtEq: null,
-      epsYOY: null, salesYOY: null, perfQuarter: null, perfYear: null,
-      rsi: null, earnings: null, recom: null,
+      companyName: null,
+      pe: null,
+      forwardPE: null,
+      peg: null,
+      roe: null,
+      roic: null,
+      profitMargin: null,
+      debtEq: null,
+      epsYOY: null,
+      salesYOY: null,
+      perfQuarter: null,
+      perfYear: null,
+      rsi: null,
+      earnings: null,
+      recom: null,
     };
   }
 }
@@ -465,80 +492,44 @@ async function scrapeYahooLosers(browser) {
 
 // Build data row for a single ticker (returns array, does not upload)
 function buildTickerDataRow(ticker, zacks, finviz, changePct = null) {
-  // Parse Finviz earnings field (e.g. "Mar 09 AMC") into AMC/BMO and Earnings Date
-  let amcBmo = null;
-  let earningsDate = null;
-  if (finviz.earnings) {
-    const earningsMatch = finviz.earnings.match(
-      /([A-Za-z]{3})\s+(\d{1,2})\s+(AMC|BMO)/i,
-    );
-    if (earningsMatch) {
-      amcBmo = earningsMatch[3].toUpperCase();
-      const monthStr = earningsMatch[1];
-      const day = earningsMatch[2];
-      const monthMap = {
-        Jan: 1,
-        Feb: 2,
-        Mar: 3,
-        Apr: 4,
-        May: 5,
-        Jun: 6,
-        Jul: 7,
-        Aug: 8,
-        Sep: 9,
-        Oct: 10,
-        Nov: 11,
-        Dec: 12,
-      };
-      const month =
-        monthMap[
-          monthStr.charAt(0).toUpperCase() + monthStr.slice(1).toLowerCase()
-        ];
-      if (month) {
-        const now = new Date();
-        let year = now.getFullYear();
-        const candidateDate = new Date(year, month - 1, parseInt(day));
-        if (candidateDate < now) year++;
-        const shortYear = String(year).slice(-2);
-        earningsDate = `${month}/${day}/${shortYear}`;
-      }
-    }
-  }
+  // AMC/BMO and Earnings Date come from Zacks scrape
+  const amcBmo = zacks.amcBmo || null;
+  const earningsDate = zacks.earningsDate || null;
 
   const today = new Date();
   const todaysDate = `${today.getMonth() + 1}/${today.getDate()}/${String(today.getFullYear()).slice(-2)}`;
 
   return [
-    todaysDate,                     // 0: Today's Date
-    earningsDate,                   // 1: Earnings Date
-    amcBmo,                         // 2: AMC/BMO
-    ticker.toUpperCase(),           // 3: Ticker
-    finviz.companyName,             // 4: Name
-    zacks.price,                    // 5: Price
-    zacks.epsCurrentQuarter,        // 6: EPS Curr Qtr
-    zacks.earningsEsp,              // 7: Earnings ESP
-    zacks.epsGrowthCurrentQuarter,  // 8: EPS Growth % Curr Qtr
-    zacks.lastEpsSurprise,          // 9: Last EPS Surprise
-    zacks.zacksRank,                // 10: Zacks Rank
-    zacks.vgm,                      // 11: VGM
-    zacks.industryRank,             // 12: Industry Rank
-    zacks.industry,                 // 13: Industry
-    zacks.magnitude90Days,          // 14: Magnitude 90 Days
-    zacks.yearOverYearGrowth,       // 15: Year Over Year Growth
-    finviz.pe,                      // 16: P/E
-    finviz.forwardPE,               // 17: Forward P/E
-    finviz.peg,                     // 18: PEG
-    finviz.roe,                     // 19: ROE
-    finviz.roic,                    // 20: ROIC
-    finviz.profitMargin,            // 21: Profit Margin
-    finviz.epsYOY,                  // 22: EPS Y/Y TTM
-    finviz.salesYOY,                // 23: Sales Y/Y TTM
-    finviz.rsi,                     // 24: RSI
-    finviz.perfQuarter,             // 25: Perf Qtr
-    finviz.perfYear,                // 26: Perf Year
-    finviz.debtEq,                  // 27: Debt/Eq
-    finviz.recom,                   // 28: Recom
-    changePct,                      // 29: %change
+    todaysDate, // 0: Today's Date
+    earningsDate, // 1: Earnings Date
+    amcBmo, // 2: AMC/BMO
+    ticker.toUpperCase(), // 3: Ticker
+    finviz.companyName, // 4: Name
+    zacks.price, // 5: Price
+    zacks.epsCurrentQuarter, // 6: EPS Curr Qtr
+    zacks.earningsEsp, // 7: Earnings ESP
+    zacks.yearOverYearGrowth, // 8: EPS Growth % Curr Qtr
+    zacks.lastEpsSurprise, // 9: Last EPS Surprise
+    zacks.zacksRank, // 10: Zacks Rank
+    zacks.vgm, // 11: VGM
+    zacks.industryRank, // 12: Industry Rank
+    zacks.industry, // 13: Industry
+    zacks.magnitude90Days, // 14: Magnitude 90 Days
+    zacks.epsGrowthCurrentQuarter, // 15: Year Over Year Growth
+    finviz.pe, // 16: P/E
+    finviz.forwardPE, // 17: Forward P/E
+    finviz.peg, // 18: PEG
+    finviz.roe, // 19: ROE
+    finviz.roic, // 20: ROIC
+    finviz.profitMargin, // 21: Profit Margin
+    finviz.epsYOY, // 22: EPS Y/Y TTM
+    finviz.salesYOY, // 23: Sales Y/Y TTM
+    finviz.rsi, // 24: RSI
+    finviz.perfQuarter, // 25: Perf Qtr
+    finviz.perfYear, // 26: Perf Year
+    finviz.recom, // 27: Recom
+    finviz.debtEq, // 28: Debt/Eq
+    changePct, // 29: %change
   ];
 }
 
@@ -562,10 +553,21 @@ async function scrapeTickerData(ticker, browser, changePct = null) {
     yearOverYearGrowth: null,
   };
   const finvizNull = {
-    companyName: null, pe: null, forwardPE: null, peg: null,
-    roe: null, roic: null, profitMargin: null, debtEq: null,
-    epsYOY: null, salesYOY: null, perfQuarter: null, perfYear: null,
-    rsi: null, earnings: null, recom: null,
+    companyName: null,
+    pe: null,
+    forwardPE: null,
+    peg: null,
+    roe: null,
+    roic: null,
+    profitMargin: null,
+    debtEq: null,
+    epsYOY: null,
+    salesYOY: null,
+    perfQuarter: null,
+    perfYear: null,
+    rsi: null,
+    earnings: null,
+    recom: null,
   };
 
   try {
