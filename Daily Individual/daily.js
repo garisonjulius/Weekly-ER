@@ -790,6 +790,7 @@ EXPLANATION: <1-2 sentence justification referencing both the data and any recen
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60000), // 60s timeout
     });
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -880,20 +881,22 @@ async function runClaudeRatings(uploadedCount) {
         `\n🤖 [${i + 1}/${rows.length}] Getting Claude rating for ${ticker}...`,
       );
 
-      const { rating, explanation } = await getClaudeRating(row);
+      try {
+        const { rating, explanation } = await getClaudeRating(row);
 
-      // Write [rating, ticker, explanation] immediately to the sheet (AE:AG)
-      const cellRange = `'${SHEET_NAME}'!${RATING_COL}${sheetRow}`;
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SPREADSHEET_ID,
-        range: cellRange,
-        valueInputOption: "RAW",
-        requestBody: { values: [[rating, explanation]] },
-      });
-      console.log(`  ✅ ${ticker}: ${rating} → ${explanation}`);
+        // Write [rating, explanation] immediately to the sheet (AE:AF)
+        const cellRange = `'${SHEET_NAME}'!${RATING_COL}${sheetRow}`;
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: cellRange,
+          valueInputOption: "RAW",
+          requestBody: { values: [[rating, explanation]] },
+        });
+        console.log(`  ✅ ${ticker}: ${rating} → ${explanation}`);
+      } catch (err) {
+        console.error(`  ❌ Failed to rate ${ticker}, skipping: ${err.message}`);
+      }
 
-      // 60s delay between API calls to stay within Tier 1 rate limits (30k input tokens/min)
-      // Reduce to 15s once upgraded to Tier 2
       if (i < rows.length - 1) {
         console.log(`  ⏳ Waiting 30s before next ticker (rate limit)...`);
         await wait(30000);
