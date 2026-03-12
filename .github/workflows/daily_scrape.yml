@@ -32,6 +32,7 @@ jobs:
         run: node "Daily Individual/daily.js" --losers
         env:
           GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
 
       - name: Notify Slack
         if: always()

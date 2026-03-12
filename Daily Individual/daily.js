@@ -1,3 +1,4 @@
+require("dotenv").config({ path: require("path").resolve(__dirname, "../.env") });
 const puppeteer = require("puppeteer");
 const prompt = require("prompt-sync")();
 const { google } = require("googleapis");
@@ -7,6 +8,20 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const CREDENTIALS_PATH =
   process.env.GOOGLE_CREDENTIALS_PATH ||
   "/Users/garisonjulius/Downloads/revised_stock/credentials.json";
+
+// ============================================================
+// ANTHROPIC CONFIG
+// ============================================================
+const ANTHROPIC_API_KEY = process.env.CLAUDE_API_KEY;
+if (!ANTHROPIC_API_KEY) {
+  console.error("❌ CLAUDE_API_KEY environment variable is not set");
+  process.exit(1);
+}
+const SPREADSHEET_ID = "1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ";
+const SHEET_NAME = "Individual";
+
+// Claude writes rating to column AE
+const RATING_COL = "AE";
 
 // Usage: node daily.js --losers
 // Usage: node "daily.js" (then input tickers manually)
@@ -124,7 +139,6 @@ async function scrapeZacksData(ticker, browser) {
     await wait(5000);
 
     const data = await page.evaluate(() => {
-      // Helper: find a row in a table by label text, return the specified column cell
       function getTableCellByLabel(tableSelector, labelText, colIndex = 1) {
         const table = document.querySelector(tableSelector);
         if (!table) return null;
@@ -141,7 +155,6 @@ async function scrapeZacksData(ticker, browser) {
         return null;
       }
 
-      // Price: #get_last_price or .last_price
       let price = null;
       const priceEl =
         document.querySelector("#get_last_price") ||
@@ -151,7 +164,6 @@ async function scrapeZacksData(ticker, browser) {
         if (match) price = match[0];
       }
 
-      // Zacks Rank: .rank_view text like "3-Hold" or rankrect class
       let zacksRank = null;
       const rankView = document.querySelector(".rank_view");
       if (rankView) {
@@ -165,7 +177,6 @@ async function scrapeZacksData(ticker, browser) {
         }
       }
       if (!zacksRank) {
-        // Fallback: extract rank number from rankrect class (e.g. "rankrect_3")
         const rankChip = document.querySelector('[class*="rankrect_"]');
         if (rankChip) {
           const classMatch = rankChip.className.match(/rankrect_(\d)/);
@@ -173,7 +184,6 @@ async function scrapeZacksData(ticker, browser) {
         }
       }
 
-      // VGM Score: .composite_val_vgm
       let vgm = null;
       const vgmEl = document.querySelector(".composite_val.composite_val_vgm");
       if (vgmEl) {
@@ -185,12 +195,10 @@ async function scrapeZacksData(ticker, browser) {
         if (vgmMatch) vgm = vgmMatch[1];
       }
 
-      // Industry Rank: .industry_rank a.status — extract percentage like "Bottom 11%"
       let industryRank = null;
       const indStatusEl = document.querySelector(".industry_rank a.status");
       if (indStatusEl) {
         const text = indStatusEl.textContent.trim();
-        // e.g. "Bottom 8% (223 out of 243)" → "Bottom 8%"
         const pctMatch = text.match(/((?:Top|Bottom)\s+\d+%)/i);
         if (pctMatch) {
           industryRank = pctMatch[1];
@@ -199,17 +207,13 @@ async function scrapeZacksData(ticker, browser) {
         }
       }
 
-      // Industry name: .industry_rank a.sector
       let industry = null;
       const sectorEl = document.querySelector(".industry_rank a.sector");
       if (sectorEl) {
         industry = sectorEl.textContent.trim();
-        // Remove "Industry: " prefix if present
         industry = industry.replace(/^Industry:\s*/i, "");
       }
 
-      // AMC/BMO and Earnings Date: from Zacks "Exp Earnings Date" section
-      // Format examples: "*BMO5/8/26", "5/7/26", "*AMC1/29/27"
       let amcBmo = null;
       let earningsDate = null;
       const bodyText2 = document.body.textContent || "";
@@ -221,19 +225,15 @@ async function scrapeZacksData(ticker, browser) {
         earningsDate = expEarningsMatch[3];
       }
 
-      // EPS Current Quarter: #detail_estimate table, "Current Quarter" row
       let epsCurrentQuarter = getTableCellByLabel(
         "#detail_estimate",
         "Current Quarter",
       );
-
-      // Last EPS Surprise: #detail_estimate table, "Last EPS Surprise" row
       let lastEpsSurprise = getTableCellByLabel(
         "#detail_estimate",
         "Last EPS Surprise",
       );
 
-      // Earnings ESP: look in tables for "Earnings ESP" row
       let earningsEsp = null;
       const allTables = document.querySelectorAll("table");
       for (const table of allTables) {
@@ -251,21 +251,17 @@ async function scrapeZacksData(ticker, browser) {
         if (earningsEsp) break;
       }
 
-      // EPS Growth Current Quarter: #detailed_earnings_estimates, "Year over Year Growth Est." row, col 1
       let epsGrowthCurrentQuarter = getTableCellByLabel(
         "#detailed_earnings_estimates",
         "Year over Year Growth",
       );
 
-      // Magnitude 90 Days: #magnitude_estimate table, "90 Days Ago" row
       let magnitude90Days = getTableCellByLabel(
         "#magnitude_estimate",
         "90 Days Ago",
       );
 
-      // Year Over Year Growth (Sales): search sales estimates table for "Year over Year Growth Est."
       let yearOverYearGrowth = null;
-      // Try the sales estimates section - typically the second table with this label
       const yoyRows = document.querySelectorAll("tr");
       let yoyCount = 0;
       for (const row of yoyRows) {
@@ -275,14 +271,12 @@ async function scrapeZacksData(ticker, browser) {
           cells[0]?.textContent?.includes("Year over Year Growth")
         ) {
           yoyCount++;
-          // Second occurrence is typically sales growth
           if (yoyCount === 2) {
             yearOverYearGrowth = cells[1]?.textContent?.trim() || null;
             break;
           }
         }
       }
-      // If only one found, use it (EPS growth)
       if (!yearOverYearGrowth && yoyCount === 1) {
         yearOverYearGrowth = epsGrowthCurrentQuarter;
       }
@@ -305,22 +299,7 @@ async function scrapeZacksData(ticker, browser) {
     });
 
     await page.close();
-
     console.log(`✅ Successfully scraped Zacks data for ${ticker}`);
-    console.log(`  Price: ${data.price}`);
-    console.log(`  Zacks Rank: ${data.zacksRank}`);
-    console.log(`  VGM: ${data.vgm}`);
-    console.log(`  Industry Rank: ${data.industryRank}`);
-    console.log(`  Industry: ${data.industry}`);
-    console.log(`  AMC/BMO: ${data.amcBmo}`);
-    console.log(`  Earnings Date: ${data.earningsDate}`);
-    console.log(`  EPS Current Qtr: ${data.epsCurrentQuarter}`);
-    console.log(`  Last EPS Surprise: ${data.lastEpsSurprise}`);
-    console.log(`  Earnings ESP: ${data.earningsEsp}`);
-    console.log(`  EPS Growth Current Qtr: ${data.epsGrowthCurrentQuarter}`);
-    console.log(`  Magnitude 90 Days: ${data.magnitude90Days}`);
-    console.log(`  Y/Y Growth: ${data.yearOverYearGrowth}`);
-
     return data;
   } catch (error) {
     console.error(`❌ Error scraping Zacks data for ${ticker}:`, error.message);
@@ -345,7 +324,6 @@ async function scrapeFinvizData(ticker, browser) {
 
     const { pageText, companyName } = await finvizPage.evaluate(() => {
       const text = document.body.textContent || document.body.innerText;
-      // Company name from page title: "AAPL Apple Inc. Stock Quote" → "Apple Inc."
       let name = null;
       const title = document.title || "";
       const titleMatch = title.match(/^[A-Z]{1,5}\s+(.+?)\s+Stock\s+Quote/);
@@ -353,16 +331,13 @@ async function scrapeFinvizData(ticker, browser) {
         name = titleMatch[1].trim();
       }
       if (!name) {
-        // Fallback: fullview-title second row
         const rows = document.querySelectorAll(".fullview-title tr");
         if (rows.length > 1) name = rows[1]?.textContent?.trim() || null;
       }
       if (!name) {
-        // Fallback: try broader title match (handles tickers of any length)
         const broadMatch = title.match(/^\S+\s+(.+?)\s+Stock/);
         if (broadMatch) name = broadMatch[1].trim();
       }
-      // Clean up leading/trailing dashes and whitespace
       if (name) name = name.replace(/^[\s\-–—]+|[\s\-–—]+$/g, "").trim();
       return { pageText: text, companyName: name };
     });
@@ -415,9 +390,49 @@ async function scrapeFinvizData(ticker, browser) {
   }
 }
 
-// Scrape Yahoo Finance top 25 losers (with retry)
+// Scrape rows from the current Yahoo Finance losers table
+async function scrapeYahooTableRows(page) {
+  return await page.evaluate(() => {
+    const items = [];
+    const rows = document.querySelectorAll("table tbody tr");
+    for (const row of rows) {
+      const symbolEl =
+        row.querySelector("td:first-child a fin-streamer[data-symbol]") ||
+        row.querySelector(
+          'td:first-child a[data-testid="table-cell-ticker"]',
+        ) ||
+        row.querySelector("td:first-child a");
+      if (!symbolEl) continue;
+      const symbol =
+        symbolEl.getAttribute("data-symbol") || symbolEl.textContent.trim();
+      if (!symbol || !/^[A-Z]{1,5}$/.test(symbol)) continue;
+
+      let changePct = null;
+      const pctStreamer = row.querySelector(
+        'fin-streamer[data-field="regularMarketChangePercent"]',
+      );
+      if (pctStreamer) {
+        changePct = pctStreamer.textContent.trim().replace(/[()]/g, "");
+      } else {
+        const cells = row.querySelectorAll("td");
+        for (const cell of cells) {
+          const text = cell.textContent.trim();
+          if (/^[+-]?[\d.]+%$/.test(text)) {
+            changePct = text;
+            break;
+          }
+        }
+      }
+
+      items.push({ symbol, changePct });
+    }
+    return items;
+  });
+}
+
+// Scrape Yahoo Finance losers
 async function scrapeYahooLosers(browser, retries = 2) {
-  console.log("🔍 Scraping Yahoo Finance top 25 losers...");
+  console.log("🔍 Scraping Yahoo Finance losers...");
   const url = "https://finance.yahoo.com/markets/stocks/losers/";
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -441,92 +456,116 @@ async function scrapeYahooLosers(browser, retries = 2) {
         }
       });
 
-      // Use domcontentloaded instead of networkidle2 — Yahoo loads data dynamically
-      // and networkidle2 can time out on CI runners
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
-      // Wait for the table to appear
       await page
         .waitForSelector("table tbody tr", { timeout: 30000 })
         .catch(() => null);
       await wait(5000);
 
-      const results = await page.evaluate(() => {
-        const items = [];
-        const rows = document.querySelectorAll("table tbody tr");
-        for (const row of rows) {
-          const symbolEl =
-            row.querySelector("td:first-child a fin-streamer[data-symbol]") ||
-            row.querySelector(
-              'td:first-child a[data-testid="table-cell-ticker"]',
-            ) ||
-            row.querySelector("td:first-child a");
-          if (!symbolEl) continue;
-          const symbol =
-            symbolEl.getAttribute("data-symbol") || symbolEl.textContent.trim();
-          if (!symbol || !/^[A-Z]{1,5}$/.test(symbol)) continue;
-
-          // Change % is typically in the 5th column (index 4) or a fin-streamer with data-field="regularMarketChangePercent"
-          let changePct = null;
-          const pctStreamer = row.querySelector(
-            'fin-streamer[data-field="regularMarketChangePercent"]',
-          );
-          if (pctStreamer) {
-            changePct = pctStreamer.textContent.trim().replace(/[()]/g, "");
-          } else {
-            // Fallback: look through cells for a percentage value
-            const cells = row.querySelectorAll("td");
-            for (const cell of cells) {
-              const text = cell.textContent.trim();
-              if (/^[+-]?[\d.]+%$/.test(text)) {
-                changePct = text;
-                break;
+      try {
+        const dropdownBtn = await page.$(
+          ".select-dropdown.yf-jdck1h button.menuBtn",
+        );
+        if (dropdownBtn) {
+          console.log("📋 Expanding rows per page to 100...");
+          await dropdownBtn.click();
+          await wait(1000);
+          const clicked100 = await page.evaluate(() => {
+            const options = document.querySelectorAll(
+              '[role="option"], [role="listbox"] button, .menuContainer li, .menuContainer button, .dialog-container button, .dialog-container [role="option"]',
+            );
+            for (const opt of options) {
+              if (opt.textContent.trim() === "100") {
+                opt.click();
+                return true;
               }
             }
+            const allEls = document.querySelectorAll(
+              'button, li, div[role="option"], span[role="option"]',
+            );
+            for (const el of allEls) {
+              if (el.textContent.trim() === "100" && el.offsetParent !== null) {
+                el.click();
+                return true;
+              }
+            }
+            return false;
+          });
+          if (clicked100) {
+            await page
+              .waitForSelector("table tbody tr", { timeout: 30000 })
+              .catch(() => null);
+            await wait(5000);
           }
-
-          items.push({ symbol, changePct });
         }
-        return items.slice(0, 25);
-      });
+      } catch (dropdownErr) {
+        console.log("⚠️ Could not change rows per page:", dropdownErr.message);
+      }
+
+      const allResults = [];
+      const seenSymbols = new Set();
+      const firstPageResults = await scrapeYahooTableRows(page);
+      for (const item of firstPageResults) {
+        if (!seenSymbols.has(item.symbol)) {
+          seenSymbols.add(item.symbol);
+          allResults.push(item);
+        }
+      }
+      console.log(`📊 Page 1: found ${firstPageResults.length} losers`);
+
+      const MAX_CANDIDATES = 200;
+      let pageNum = 1;
+      while (allResults.length < MAX_CANDIDATES) {
+        const nextBtn = await page.$(
+          '[data-testid="next-page-button"]:not([disabled])',
+        );
+        if (!nextBtn) break;
+        pageNum++;
+        await nextBtn.click();
+        await wait(5000);
+        const pageResults = await scrapeYahooTableRows(page);
+        if (pageResults.length === 0) break;
+        for (const item of pageResults) {
+          if (!seenSymbols.has(item.symbol)) {
+            seenSymbols.add(item.symbol);
+            allResults.push(item);
+          }
+        }
+        console.log(
+          `📊 Page ${pageNum}: found ${pageResults.length} losers (total: ${allResults.length})`,
+        );
+      }
 
       await page.close();
-
-      console.log(
-        `✅ Found ${results.length} losers: ${results.map((r) => `${r.symbol} (${r.changePct})`).join(", ")}`,
-      );
-      if (results.length > 0) return results;
-      console.log("⚠️ No results found, will retry...");
-      await page.close();
+      console.log(`✅ Found ${allResults.length} total losers`);
+      if (allResults.length > 0) return allResults;
     } catch (error) {
       console.error(
         `❌ Error scraping Yahoo losers (attempt ${attempt}/${retries}):`,
         error.message,
       );
     }
-  } // end retry loop
+  }
   return [];
 }
 
-// Build data row for a single ticker (returns array, does not upload)
 function buildTickerDataRow(ticker, zacks, finviz, changePct = null) {
-  // AMC/BMO and Earnings Date come from Zacks scrape
   const amcBmo = zacks.amcBmo || null;
   const earningsDate = zacks.earningsDate || null;
-
   const today = new Date();
   const todaysDate = `${today.getMonth() + 1}/${today.getDate()}/${String(today.getFullYear()).slice(-2)}`;
 
   return [
-    todaysDate, // 0: Today's Date
-    earningsDate, // 1: Earnings Date
-    amcBmo, // 2: AMC/BMO
-    ticker.toUpperCase(), // 3: Ticker
-    finviz.companyName, // 4: Name
-    zacks.price, // 5: Price
-    zacks.epsCurrentQuarter, // 6: EPS Curr Qtr
-    zacks.earningsEsp, // 7: Earnings ESP
-    zacks.yearOverYearGrowth, // 8: EPS Growth % Curr Qtr
-    zacks.lastEpsSurprise, // 9: Last EPS Surprise
+    todaysDate, // 0:  Today's Date
+    earningsDate, // 1:  Earnings Date
+    amcBmo, // 2:  AMC/BMO
+    ticker.toUpperCase(), // 3:  Ticker
+    finviz.companyName, // 4:  Name
+    zacks.price, // 5:  Price
+    zacks.epsCurrentQuarter, // 6:  EPS Curr Qtr
+    zacks.earningsEsp, // 7:  Earnings ESP
+    zacks.yearOverYearGrowth, // 8:  EPS Growth % Curr Qtr
+    zacks.lastEpsSurprise, // 9:  Last EPS Surprise
     zacks.zacksRank, // 10: Zacks Rank
     zacks.vgm, // 11: VGM
     zacks.industryRank, // 12: Industry Rank
@@ -550,7 +589,6 @@ function buildTickerDataRow(ticker, zacks, finviz, changePct = null) {
   ];
 }
 
-// Scrape a single ticker and return data row
 async function scrapeTickerData(ticker, browser, changePct = null) {
   console.log(`🚀 Scraping ${ticker}...`);
 
@@ -599,7 +637,7 @@ async function scrapeTickerData(ticker, browser, changePct = null) {
       finvizResult.status === "fulfilled" ? finvizResult.value : finvizNull;
 
     const row = buildTickerDataRow(ticker, zacks, finviz, changePct);
-    console.log(`📊 ${ticker} done. Data: ${JSON.stringify(row)}`);
+    console.log(`📊 ${ticker} done.`);
     return row;
   } catch (error) {
     console.error(`❌ Error scraping ${ticker}:`, error.message);
@@ -607,7 +645,19 @@ async function scrapeTickerData(ticker, browser, changePct = null) {
   }
 }
 
-// --- Google Sheets upload ---
+// --- Google Sheets helpers ---
+async function getAuthenticatedSheets() {
+  const creds = require(CREDENTIALS_PATH);
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      client_email: creds.client_email,
+      private_key: creds.private_key.replace(/\\n/g, "\n"),
+    },
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  return google.sheets({ version: "v4", auth });
+}
+
 async function getSheetId(sheets, spreadsheetId, sheetName) {
   const response = await sheets.spreadsheets.get({ spreadsheetId });
   const sheet = response.data.sheets.find(
@@ -617,63 +667,31 @@ async function getSheetId(sheets, spreadsheetId, sheetName) {
   return sheet.properties.sheetId;
 }
 
-// Clear all data from row 2 onwards in the Individual sheet
 async function clearIndividualSheet() {
   try {
-    const creds = require(CREDENTIALS_PATH);
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: creds.client_email,
-        private_key: creds.private_key.replace(/\\n/g, "\n"),
-      },
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-    });
-    const sheets = google.sheets({ version: "v4", auth });
-    const spreadsheetId = "1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ";
-    const sheetName = "Individual";
-
+    const sheets = await getAuthenticatedSheets();
     await sheets.spreadsheets.values.clear({
-      spreadsheetId,
-      range: `'${sheetName}'!A2:ZZ`,
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEET_NAME}'!A2:ZZ`,
     });
-
     console.log("🧹 Cleared Individual sheet from row 2 onwards");
   } catch (error) {
     console.error("❌ Error clearing sheet:", error.message);
   }
 }
 
-// Upload a single row to Google Sheets at row 2 (inserts and shifts existing data down)
 async function uploadRowToGoogleSheet(dataArray) {
   try {
-    const creds = require(CREDENTIALS_PATH);
+    const sheets = await getAuthenticatedSheets();
+    const sheetId = await getSheetId(sheets, SPREADSHEET_ID, SHEET_NAME);
 
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: creds.client_email,
-        private_key: creds.private_key.replace(/\\n/g, "\n"),
-      },
-      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-    });
-
-    const sheets = google.sheets({ version: "v4", auth });
-    const spreadsheetId = "1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ";
-    const sheetName = "Individual";
-    const sheetId = await getSheetId(sheets, spreadsheetId, sheetName);
-
-    // Insert a new row at position 2 (0-indexed: startIndex 1)
     await sheets.spreadsheets.batchUpdate({
-      spreadsheetId,
+      spreadsheetId: SPREADSHEET_ID,
       requestBody: {
         requests: [
           {
             insertDimension: {
-              range: {
-                sheetId,
-                dimension: "ROWS",
-                startIndex: 1,
-                endIndex: 2,
-              },
+              range: { sheetId, dimension: "ROWS", startIndex: 1, endIndex: 2 },
               inheritFromBefore: false,
             },
           },
@@ -681,14 +699,11 @@ async function uploadRowToGoogleSheet(dataArray) {
       },
     });
 
-    // Write the data into row 2
     await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `'${sheetName}'!A2`,
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEET_NAME}'!A2`,
       valueInputOption: "RAW",
-      requestBody: {
-        values: [dataArray],
-      },
+      requestBody: { values: [dataArray] },
     });
 
     console.log(`✅ Uploaded row to Google Sheets`);
@@ -699,18 +714,221 @@ async function uploadRowToGoogleSheet(dataArray) {
   }
 }
 
-// Main function - supports --losers mode and manual ticker input
+// ============================================================
+// CLAUDE RATINGS — called once after all tickers are uploaded
+// ============================================================
+
+/**
+ * Calls Claude API with web search for a single ticker.
+ * Returns { rating } or N/A on failure.
+ */
+async function getClaudeRating(row) {
+  const ticker = row[3] || "N/A";
+
+  // Build context from the row data
+  const data = {
+    price: row[5],
+    epsCurrentQtr: row[6],
+    earningsEsp: row[7],
+    epsGrowthPct: row[8],
+    lastEpsSurprise: row[9],
+    zacksRank: row[10],
+    vgm: row[11],
+    industryRank: row[12],
+    industry: row[13],
+    pe: row[16],
+    forwardPE: row[17],
+    peg: row[18],
+    roe: row[19],
+    roic: row[20],
+    profitMargin: row[21],
+    epsYOY: row[22],
+    salesYOY: row[23],
+    rsi: row[24],
+    perfQuarter: row[25],
+    perfYear: row[26],
+    recom: row[27],
+    debtEq: row[28],
+    changePct: row[29],
+  };
+
+  const prompt = `You are a stock analyst. Evaluate ${ticker} using the financial data below AND search the web for recent news, catalysts, or risks.
+
+FINANCIAL DATA:
+- Price: ${data.price} | Change: ${data.changePct}
+- Zacks Rank: ${data.zacksRank} | VGM: ${data.vgm} | Industry: ${data.industry} (${data.industryRank})
+- EPS Current Qtr: ${data.epsCurrentQtr} | EPS Growth: ${data.epsGrowthPct} | Last EPS Surprise: ${data.lastEpsSurprise}
+- Earnings ESP: ${data.earningsEsp}
+- P/E: ${data.pe} | Forward P/E: ${data.forwardPE} | PEG: ${data.peg}
+- ROE: ${data.roe} | ROIC: ${data.roic} | Profit Margin: ${data.profitMargin}
+- EPS Y/Y: ${data.epsYOY} | Sales Y/Y: ${data.salesYOY}
+- RSI: ${data.rsi} | Perf Quarter: ${data.perfQuarter} | Perf Year: ${data.perfYear}
+- Analyst Recom: ${data.recom} | Debt/Eq: ${data.debtEq}
+
+Rate as: Strong Buy, Buy, Moderate Buy, Watch, Hold, Sell, or Avoid.
+
+Respond in exactly this format (two lines only, no other text):
+RATING: <your rating>
+EXPLANATION: <1-2 sentence justification referencing both the data and any recent news>`;
+
+  const body = {
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 1024,
+    messages: [{ role: "user", content: prompt }],
+    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
+  };
+
+  try {
+    console.log(`  📡 Sending API request for ${ticker}...`);
+    const startTime = Date.now();
+
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(body),
+    });
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`  📥 Response received in ${elapsed}s (status: ${res.status})`);
+
+    const json = await res.json();
+    if (json.error) {
+      console.error(`❌ Claude API error for ${ticker}:`, json.error.message);
+      return { rating: "N/A" };
+    }
+
+    // Log content block types so we can see what Claude did
+    const blockTypes = json.content.map((b) => b.type).join(", ");
+    console.log(`  📦 Response blocks: [${blockTypes}]`);
+
+    // Search ALL text blocks for the rating (not just the last one)
+    const textBlocks = json.content.filter((b) => b.type === "text");
+    console.log(`  📝 Text blocks (${textBlocks.length}):`);
+    textBlocks.forEach((b, idx) => console.log(`     [${idx}] "${b.text.trim().substring(0, 100)}"`));
+
+    // Combine all text blocks to search for rating and explanation
+    const allText = textBlocks.map((b) => b.text).join("\n");
+
+    let rating = "Hold";
+    let explanation = "";
+    const ratingMatch = allText.match(
+      /RATING:\s*(Strong Buy|Buy|Moderate Buy|Watch|Hold|Sell|Avoid)/i,
+    );
+    if (ratingMatch) {
+      rating = ratingMatch[1].trim();
+    } else {
+      console.log(`  ⚠️ No rating match found in any text block, defaulting to "Hold"`);
+    }
+
+    const explMatch = allText.match(/EXPLANATION:\s*(.+)/i);
+    if (explMatch) {
+      explanation = explMatch[1].trim();
+    }
+
+    return { rating, explanation };
+  } catch (err) {
+    console.error(
+      `❌ Network error calling Claude for ${ticker}:`,
+      err.message,
+    );
+    return { rating: "N/A" };
+  }
+}
+
+/**
+ * Reads all populated rows from the sheet, calls Claude for each,
+ * then batch-writes Rating (AD) and Explanation (AE) back.
+ */
+async function runClaudeRatings(uploadedCount) {
+  console.log("\n🤖 Running Claude ratings for all uploaded stocks...");
+  console.log("=".repeat(50));
+
+  try {
+    const sheets = await getAuthenticatedSheets();
+
+    // Read all data rows — if uploadedCount given, scope it; otherwise read all
+    const readRange = uploadedCount
+      ? `'${SHEET_NAME}'!A2:AC${1 + uploadedCount}`
+      : `'${SHEET_NAME}'!A2:AC`;
+    console.log(`📖 Reading sheet range: ${readRange}`);
+    const readRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: readRange,
+    });
+
+    const rows = readRes.data.values || [];
+    if (rows.length === 0) {
+      console.log("⚠️  No data found in sheet — skipping Claude ratings.");
+      return;
+    }
+
+    console.log(`📊 Found ${rows.length} rows to rate`);
+    // Preview tickers found
+    const tickers = rows.map((r) => r[3] || "???").join(", ");
+    console.log(`📋 Tickers: ${tickers}`);
+
+    // Call Claude for each row, write rating immediately after each
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const ticker = row[3] || `Row ${i + 2}`;
+      const sheetRow = i + 2; // row index in the sheet (1-indexed, skip header)
+      console.log(
+        `\n🤖 [${i + 1}/${rows.length}] Getting Claude rating for ${ticker}...`,
+      );
+
+      const { rating, explanation } = await getClaudeRating(row);
+
+      // Write [rating, ticker, explanation] immediately to the sheet (AE:AG)
+      const cellRange = `'${SHEET_NAME}'!${RATING_COL}${sheetRow}`;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: cellRange,
+        valueInputOption: "RAW",
+        requestBody: { values: [[rating, explanation]] },
+      });
+      console.log(`  ✅ ${ticker}: ${rating} → ${explanation}`);
+
+      // 60s delay between API calls to stay within Tier 1 rate limits (30k input tokens/min)
+      // Reduce to 15s once upgraded to Tier 2
+      if (i < rows.length - 1) {
+        console.log(`  ⏳ Waiting 30s before next ticker (rate limit)...`);
+        await wait(30000);
+      }
+    }
+
+    console.log(
+      `\n✅ Claude ratings written to column AE for ${rows.length} stocks`,
+    );
+  } catch (error) {
+    console.error("❌ Error running Claude ratings:", error.message);
+  }
+}
+
+// ============================================================
+// MAIN
+// ============================================================
 async function main() {
   const args = process.argv.slice(2);
   const isLosersMode = args.includes("--losers");
+  const isRatingsOnly = args.includes("--ratings");
 
-  console.log("🎯 Daily Stock Scraper (Zacks + Finviz)");
+  console.log("🎯 Daily Stock Scraper (Zacks + Finviz + Claude)");
   console.log("=".repeat(50));
+
+  if (isRatingsOnly) {
+    console.log("🤖 Mode: Claude ratings only (using existing sheet data)");
+    await runClaudeRatings();
+    console.log("\n🏁 Done! Ratings written to column AE.");
+    return;
+  }
 
   await clearIndividualSheet();
 
   const browser = await createBrowser();
-  // entries: array of { symbol, changePct }
   let entries = [];
 
   try {
@@ -741,40 +959,56 @@ async function main() {
       }
     }
 
-    console.log(
-      `\n📊 Tickers to scrape (${entries.length}): ${entries.map((e) => e.symbol).join(", ")}`,
-    );
+    console.log(`\n📋 Candidate list (${entries.length} tickers):`);
+    entries.forEach((e, idx) => {
+      console.log(`  ${idx + 1}. ${e.symbol} (${e.changePct || "N/A"})`);
+    });
     console.log("=".repeat(50));
 
+    const MAX_OUTPUT = 25;
+    let uploadedCount = 0;
+    let totalScraped = 0;
+
     for (let i = 0; i < entries.length; i++) {
+      if (uploadedCount >= MAX_OUTPUT) {
+        console.log(`\n🎯 Reached ${MAX_OUTPUT} uploaded stocks, stopping.`);
+        break;
+      }
+
       const { symbol, changePct } = entries[i];
-      console.log(`\n📊 Processing ${i + 1}/${entries.length}: ${symbol}`);
-      console.log("-".repeat(30));
+      console.log(`\n🔍 Scraping ${symbol} Now (${uploadedCount}/${MAX_OUTPUT} uploaded)`);
 
       const row = await scrapeTickerData(symbol, browser, changePct);
+      totalScraped++;
 
-      // Skip stocks with RSI >= 70 or Recom >= 1.5
       const rsiVal = parseFloat(row[24]);
       const recomVal = parseFloat(row[27]);
-      if (rsiVal >= 70) {
+      if (isNaN(recomVal) || recomVal === null) {
+        console.log(`⏭️ Skipping ${symbol}: Recom is null/missing`);
+      } else if (rsiVal >= 70) {
         console.log(`⏭️ Skipping ${symbol}: RSI ${rsiVal} >= 70`);
-        continue;
-      }
-      if (recomVal >= 1.5) {
+      } else if (recomVal >= 1.5) {
         console.log(`⏭️ Skipping ${symbol}: Recom ${recomVal} >= 1.5`);
-        continue;
+      } else {
+        await uploadRowToGoogleSheet(row);
+        uploadedCount++;
       }
 
-      await uploadRowToGoogleSheet(row);
-
-      if (i < entries.length - 1) {
+      if (i < entries.length - 1 && uploadedCount < MAX_OUTPUT) {
         console.log("⏳ Waiting 2 seconds before next ticker...");
         await wait(2000);
       }
     }
 
-    console.log("\n🎉 All tickers processed!");
-    console.log(`📊 Total processed: ${entries.length}`);
+    console.log("\n🎉 All tickers scraped!");
+    console.log(
+      `📊 Total scraped: ${totalScraped}, Uploaded: ${uploadedCount}`,
+    );
+
+    // ✅ Run Claude ratings after ALL data is in the sheet
+    await runClaudeRatings(uploadedCount);
+
+    console.log("\n🏁 All done! Sheet is fully populated with ratings.");
   } finally {
     await browser.close();
   }

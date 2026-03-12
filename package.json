@@ -11,6 +11,7 @@
   "description": "",
   "dependencies": {
     "cheerio": "^1.1.0",
+    "dotenv": "^17.3.1",
     "googleapis": "^164.1.0",
     "prompt-sync": "^4.2.0",
     "puppeteer": "^24.29.0"
