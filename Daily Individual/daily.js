@@ -977,13 +977,13 @@ async function main() {
   console.log("🎯 Daily Stock Scraper (Zacks + Finviz + Claude)");
   console.log("=".repeat(50));
 
-  if (isRatingsOnly) {
-    console.log("🤖 Mode: Claude ratings only (using existing sheet data)");
-    await sortSheetByRecom();
-    await runClaudeRatings();
-    console.log("\n🏁 Done! Ratings written to column AE.");
-    return;
-  }
+  // if (isRatingsOnly) {
+  //   console.log("🤖 Mode: Claude ratings only (using existing sheet data)");
+  //   await sortSheetByRecom();
+  //   await runClaudeRatings();
+  //   console.log("\n🏁 Done! Ratings written to column AE.");
+  //   return;
+  // }
 
   await clearIndividualSheet();
 
@@ -1066,7 +1066,7 @@ async function main() {
 
     // Sort by Recom, then run Claude ratings
     await sortSheetByRecom();
-    await runClaudeRatings(uploadedCount);
+    // await runClaudeRatings(uploadedCount);
 
     console.log("\n🏁 All done! Sheet is fully populated with ratings.");
   } finally {
