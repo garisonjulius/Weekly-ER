@@ -872,34 +872,46 @@ async function runClaudeRatings(uploadedCount) {
     const tickers = rows.map((r) => r[3] || "???").join(", ");
     console.log(`📋 Tickers: ${tickers}`);
 
-    // Call Claude for each row, write rating immediately after each
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const ticker = row[3] || `Row ${i + 2}`;
-      const sheetRow = i + 2; // row index in the sheet (1-indexed, skip header)
-      console.log(
-        `\n🤖 [${i + 1}/${rows.length}] Getting Claude rating for ${ticker}...`,
+    // Call Claude in parallel batches of 3, write ratings immediately
+    const BATCH_SIZE = 3;
+    for (let batchStart = 0; batchStart < rows.length; batchStart += BATCH_SIZE) {
+      const batch = rows.slice(batchStart, batchStart + BATCH_SIZE);
+      const batchNum = Math.floor(batchStart / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(rows.length / BATCH_SIZE);
+      console.log(`\n📦 Batch ${batchNum}/${totalBatches}`);
+
+      const results = await Promise.allSettled(
+        batch.map(async (row, j) => {
+          const i = batchStart + j;
+          const ticker = row[3] || `Row ${i + 2}`;
+          const sheetRow = i + 2;
+          console.log(`  🤖 [${i + 1}/${rows.length}] Getting Claude rating for ${ticker}...`);
+
+          const { rating, explanation } = await getClaudeRating(row);
+
+          const cellRange = `'${SHEET_NAME}'!${RATING_COL}${sheetRow}`;
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: SPREADSHEET_ID,
+            range: cellRange,
+            valueInputOption: "RAW",
+            requestBody: { values: [[rating, explanation]] },
+          });
+          console.log(`  ✅ ${ticker}: ${rating} → ${explanation}`);
+          return { ticker, rating };
+        })
       );
 
-      try {
-        const { rating, explanation } = await getClaudeRating(row);
+      // Log any failures
+      results.forEach((r, j) => {
+        if (r.status === "rejected") {
+          const ticker = batch[j]?.[3] || "???";
+          console.error(`  ❌ Failed to rate ${ticker}, skipping: ${r.reason?.message}`);
+        }
+      });
 
-        // Write [rating, explanation] immediately to the sheet (AE:AF)
-        const cellRange = `'${SHEET_NAME}'!${RATING_COL}${sheetRow}`;
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: SPREADSHEET_ID,
-          range: cellRange,
-          valueInputOption: "RAW",
-          requestBody: { values: [[rating, explanation]] },
-        });
-        console.log(`  ✅ ${ticker}: ${rating} → ${explanation}`);
-      } catch (err) {
-        console.error(`  ❌ Failed to rate ${ticker}, skipping: ${err.message}`);
-      }
-
-      if (i < rows.length - 1) {
-        console.log(`  ⏳ Waiting 30s before next ticker (rate limit)...`);
-        await wait(30000);
+      if (batchStart + BATCH_SIZE < rows.length) {
+        console.log(`  ⏳ Waiting 15s before next batch (rate limit)...`);
+        await wait(15000);
       }
     }
 
@@ -908,6 +920,49 @@ async function runClaudeRatings(uploadedCount) {
     );
   } catch (error) {
     console.error("❌ Error running Claude ratings:", error.message);
+  }
+}
+
+/**
+ * Sorts the sheet by Recom column (AB, index 27) ascending.
+ */
+async function sortSheetByRecom() {
+  console.log("\n📊 Sorting sheet by Recom (ascending)...");
+  try {
+    const sheets = await getAuthenticatedSheets();
+    const spreadsheet = await sheets.spreadsheets.get({
+      spreadsheetId: SPREADSHEET_ID,
+    });
+    const sheet = spreadsheet.data.sheets.find(
+      (s) => s.properties.title === SHEET_NAME
+    );
+    const sheetId = sheet.properties.sheetId;
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            sortRange: {
+              range: {
+                sheetId,
+                startRowIndex: 1, // skip header
+                startColumnIndex: 0,
+              },
+              sortSpecs: [
+                {
+                  dimensionIndex: 27, // Recom column (0-indexed)
+                  sortOrder: "ASCENDING",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    console.log("✅ Sheet sorted by Recom");
+  } catch (err) {
+    console.error("❌ Failed to sort sheet:", err.message);
   }
 }
 
@@ -924,6 +979,7 @@ async function main() {
 
   if (isRatingsOnly) {
     console.log("🤖 Mode: Claude ratings only (using existing sheet data)");
+    await sortSheetByRecom();
     await runClaudeRatings();
     console.log("\n🏁 Done! Ratings written to column AE.");
     return;
@@ -1008,7 +1064,8 @@ async function main() {
       `📊 Total scraped: ${totalScraped}, Uploaded: ${uploadedCount}`,
     );
 
-    // ✅ Run Claude ratings after ALL data is in the sheet
+    // Sort by Recom, then run Claude ratings
+    await sortSheetByRecom();
     await runClaudeRatings(uploadedCount);
 
     console.log("\n🏁 All done! Sheet is fully populated with ratings.");
