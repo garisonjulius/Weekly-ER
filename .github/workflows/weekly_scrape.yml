@@ -29,17 +29,17 @@ jobs:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
 
       - name: Step 1 - Reset Google Sheets
-        run: python reset.py
+        run: python weekly/reset.py
         env:
           GOOGLE_CREDENTIALS_PATH: credentials.json
 
       - name: Step 2 - Merge tickers and generate CSVs
-        run: python merge_tickers.py
+        run: python weekly/merge_tickers.py
         env:
           GOOGLE_CREDENTIALS_PATH: credentials.json
 
       - name: Step 3 - Run Browse AI robots
-        run: python run_robots.py
+        run: python weekly/run_robots.py
         env:
           BROWSE_AI_API_KEY: ${{ secrets.BROWSE_AI_API_KEY }}
           GOOGLE_CREDENTIALS_PATH: credentials.json

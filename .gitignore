@@ -3,3 +3,13 @@ node_modules/
 .DS_Store
 __pycache__/
 .venv/
+
+# Generated data files (created at runtime by scripts)
+finviz.csv
+zacks.csv
+stock_analysis.csv
+yahoo_finance.csv
+Master_Tickers
+
+# Scratch/debug HTML files
+*.html

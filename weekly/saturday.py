@@ -28,10 +28,10 @@ def main():
     print(f"Next Monday: {next_monday}")
 
     # Step 1: Scrape Zacks earnings calendar
-    run([sys.executable, "next_week_tickers.py"], "Scraping Zacks earnings calendar")
+    run([sys.executable, "weekly/next_week_tickers.py"], "Scraping Zacks earnings calendar")
 
     # Step 2: Scrape Yahoo Finance earnings
-    run([sys.executable, "yahoo.py", next_monday, "5"], f"Scraping Yahoo Finance earnings ({next_monday}, 5 days)")
+    run([sys.executable, "weekly/yahoo.py", next_monday, "5"], f"Scraping Yahoo Finance earnings ({next_monday}, 5 days)")
 
     # Step 3: Push files to GitHub
     run("git add \"StockCode - Zacks_AMC_BMO.csv\" Yahoo_Ticker", "Staging files")
