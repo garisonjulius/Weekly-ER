@@ -1,12 +1,7 @@
 name: Daily Stock Scrape
 
 on:
-  schedule:
-    # 6:30 AM PST (14:30 UTC) Mon-Fri
-    - cron: "30 14 * * 1-5"
-    # 10:00 AM PST (18:00 UTC) Mon-Fri
-    - cron: "0 18 * * 1-5"
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch: # Triggered by cron-job.org at 6:45 AM and 10:00 AM PST Mon-Fri
 
 jobs:
   scrape:
