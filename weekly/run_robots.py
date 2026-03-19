@@ -1,11 +1,7 @@
 import csv
-import json
 import os
-import re
 import time
 import requests
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
 
 API_KEY = os.environ.get(
     "BROWSE_AI_API_KEY",
@@ -25,10 +21,6 @@ ROBOTS = {
     "Stock Analysis": {
         "id": "019a60d7-5de1-797c-bd45-dce2036939a3",
         "csv": "stock_analysis.csv",
-    },
-    "Yahoo Finance": {
-        "id": "019c6a1d-f16b-7a9c-93ca-abf67212cefd",
-        "csv": "yahoo_finance.csv",
     },
 }
 
@@ -91,139 +83,6 @@ def run_bulk(robot_name, robot_id, urls):
             time.sleep(2)
 
 
-# ==========================
-# Yahoo Finance specific
-# ==========================
-
-YAHOO_POLL_INTERVAL = 60 
-
-
-def extract_from_task(task_result, input_url):
-    """Extract ticker and screenshot URL from a completed task."""
-    match = re.search(r"/quote/([^/]+)", input_url)
-    ticker = match.group(1) if match else None
-
-    screenshot_url = None
-    screenshots = task_result.get("capturedScreenshots", {})
-    if screenshots:
-        entry = next(iter(screenshots.values()), None)
-        if isinstance(entry, dict):
-            screenshot_url = entry.get("src")
-        elif isinstance(entry, str):
-            screenshot_url = entry
-    if not screenshot_url:
-        def find_s3_url(obj):
-            if isinstance(obj, str) and "browseai-captured-data.s3" in obj:
-                return obj
-            if isinstance(obj, dict):
-                for v in obj.values():
-                    found = find_s3_url(v)
-                    if found:
-                        return found
-            if isinstance(obj, list):
-                for v in obj:
-                    found = find_s3_url(v)
-                    if found:
-                        return found
-            return None
-        screenshot_url = find_s3_url(task_result)
-
-    return ticker, screenshot_url
-
-
-def append_to_google_sheets(rows):
-    """Append rows to the 'Image_Raw' sheet in Google Sheets in a single batch."""
-    creds_path = os.environ.get(
-        "GOOGLE_CREDENTIALS_PATH",
-        "/Users/garisonjulius/Downloads/revised_stock/credentials.json",
-    )
-    with open(creds_path, "r") as f:
-        creds_data = json.load(f)
-
-    credentials = Credentials.from_service_account_info(
-        creds_data,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
-    service = build("sheets", "v4", credentials=credentials)
-    spreadsheet_id = "1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ"
-
-    service.spreadsheets().values().append(
-        spreadsheetId=spreadsheet_id,
-        range="'Image_Raw'!A:B",
-        valueInputOption="RAW",
-        insertDataOption="INSERT_ROWS",
-        body={"values": rows}
-    ).execute()
-
-    print(f"Appended {len(rows)} rows to Google Sheets 'Image_Raw'")
-
-
-def run_yahoo_finance(robot_id, urls):
-    """Submit Yahoo Finance URLs as a bulk run, poll, extract tickers/screenshots, and push to Google Sheets."""
-    input_params = [{"originUrl": u} for u in urls]
-    resp = requests.post(
-        f"{API_BASE}/robots/{robot_id}/bulk-runs",
-        headers=HEADERS,
-        json={"title": "Yahoo Finance Bulk Run", "inputParameters": input_params},
-    )
-    resp.raise_for_status()
-    bulk_data = resp.json()
-    bulk_run_id = bulk_data["result"]["bulkRun"]["id"]
-    total = len(urls)
-    print(f"Bulk run started: {bulk_run_id} ({total} URLs)")
-
-    while True:
-        time.sleep(YAHOO_POLL_INTERVAL)
-        resp = requests.get(
-            f"{API_BASE}/robots/{robot_id}/bulk-runs/{bulk_run_id}",
-            headers=HEADERS,
-        )
-        resp.raise_for_status()
-        bulk_status = resp.json()
-        bulk_run_result = bulk_status["result"]["bulkRun"]
-        successful = bulk_run_result.get("successfulTasks", 0)
-        failed = bulk_run_result.get("failedTasks", 0)
-        done = successful + failed
-        print(f"Progress: {done}/{total} (success: {successful}, failed: {failed})")
-
-        if done >= total:
-            break
-
-    # Fetch all tasks with pagination
-    all_tasks = []
-    page = 1
-    while True:
-        resp = requests.get(
-            f"{API_BASE}/robots/{robot_id}/bulk-runs/{bulk_run_id}",
-            headers=HEADERS,
-            params={"page": page},
-        )
-        if resp.status_code == 404:
-            break
-        resp.raise_for_status()
-        data = resp.json()
-        tasks = data["result"].get("robotTasks", {}).get("items", [])
-        if not tasks:
-            break
-        all_tasks.extend(tasks)
-        print(f"Fetched page {page} ({len(tasks)} tasks)")
-        page += 1
-
-    rows = []
-    for task in all_tasks:
-        input_url = task.get("inputParameters", {}).get("originUrl", "")
-        ticker, screenshot_url = extract_from_task(task, input_url)
-
-        print(f"\nTicker: {ticker}")
-        print(f"Screenshot URL: {screenshot_url}")
-
-        if ticker and screenshot_url:
-            rows.append([ticker, screenshot_url])
-
-    if rows:
-        append_to_google_sheets(rows)
-
-
 def main():
     print("Starting Browse AI bulk runs...\n")
 
@@ -243,10 +102,7 @@ def main():
 
         print(f"{name} ({len(urls)} URLs from {csv_path})")
 
-        if name == "Yahoo Finance":
-            run_yahoo_finance(robot_id, urls)
-        else:
-            run_bulk(name, robot_id, urls)
+        run_bulk(name, robot_id, urls)
 
         print()
         time.sleep(2)

@@ -86,13 +86,14 @@ def scrape_next_week(driver):
     )
     time.sleep(3)
 
-    # Click "Next Week" button
-    print("Navigating to next week...")
-    next_week_btn = driver.find_element(
-        By.CSS_SELECTOR, "#prev_next button.scroll-right"
-    )
-    next_week_btn.click()
-    time.sleep(3)
+    # Click "Next Week" button twice to go 2 weeks ahead
+    for i in range(2):
+        print(f"Navigating to next week ({i+1}/2)...")
+        next_week_btn = driver.find_element(
+            By.CSS_SELECTOR, "#prev_next button.scroll-right"
+        )
+        next_week_btn.click()
+        time.sleep(3)
 
     # Wait for the day cards to update
     WebDriverWait(driver, 10).until(

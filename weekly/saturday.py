@@ -2,6 +2,8 @@ import subprocess
 import sys
 from datetime import date, timedelta
 
+# Only run: python weekly/saturday.py from 
+# root directory. 
 
 def run(cmd, description):
     """Run a command and exit if it fails."""
@@ -14,8 +16,8 @@ def run(cmd, description):
         sys.exit(1)
 
 
-def get_next_next_monday():
-    """Calculate the Monday after next (skip the upcoming week)."""
+def get_monday_two_weeks_ahead():
+    """Calculate the Monday two weeks from now (click 'Next Week' twice on Zacks)."""
     today = date.today()
     days_ahead = (7 - today.weekday()) % 7
     if days_ahead == 0:
@@ -24,7 +26,7 @@ def get_next_next_monday():
 
 
 def main():
-    next_monday = get_next_next_monday()
+    next_monday = get_monday_two_weeks_ahead()
     print(f"Next Monday: {next_monday}")
 
     # Step 1: Scrape Zacks earnings calendar

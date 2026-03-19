@@ -147,14 +147,6 @@ def merge_tickers():
             f.write(f'"{url}"\n')
     print(f"Created stock_analysis.csv with {len(tickers)} links")
 
-    # Generate yahoo_finance.csv
-    with open("yahoo_finance.csv", "w") as f:
-        f.write('"Origin URL"\n')
-        for ticker in tickers:
-            url = f"https://finance.yahoo.com/quote/{ticker}/analyst-insights/"
-            f.write(f'"{url}"\n')
-    print(f"Created yahoo_finance.csv with {len(tickers)} links")
-
     # Upload to Google Sheets
     sheet_data = [(ticker, master[ticker]) for ticker in tickers]
     upload_to_google_sheets(sheet_data)
