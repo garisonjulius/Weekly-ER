@@ -646,7 +646,9 @@ async function scrapeTickerData(ticker, browser, changePct = null) {
 }
 
 // --- Google Sheets helpers ---
+let _sheetsClient = null;
 async function getAuthenticatedSheets() {
+  if (_sheetsClient) return _sheetsClient;
   const creds = require(CREDENTIALS_PATH);
   const auth = new google.auth.GoogleAuth({
     credentials: {
@@ -655,16 +657,20 @@ async function getAuthenticatedSheets() {
     },
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
-  return google.sheets({ version: "v4", auth });
+  _sheetsClient = google.sheets({ version: "v4", auth });
+  return _sheetsClient;
 }
 
+let _sheetId = null;
 async function getSheetId(sheets, spreadsheetId, sheetName) {
+  if (_sheetId !== null) return _sheetId;
   const response = await sheets.spreadsheets.get({ spreadsheetId });
   const sheet = response.data.sheets.find(
     (s) => s.properties.title === sheetName,
   );
   if (!sheet) throw new Error(`Sheet with name ${sheetName} not found`);
-  return sheet.properties.sheetId;
+  _sheetId = sheet.properties.sheetId;
+  return _sheetId;
 }
 
 async function clearIndividualSheet() {

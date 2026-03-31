@@ -24,7 +24,8 @@ jobs:
         run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
 
       - name: Run daily scraper (losers mode)
-        run: node daily/daily.js --losers
+        id: scrape
+        run: node daily/daily.js --losers 2>&1 | tee /tmp/scrape_output.txt
         env:
           GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
           CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
@@ -40,8 +41,21 @@ jobs:
             EMOJI="❌"
           fi
 
+          # Extract the summary lines from scraper output
+          SCRAPED=$(grep -oP 'Total scraped: \K[^,]+' /tmp/scrape_output.txt || echo "?")
+          UPLOADED=$(grep -oP 'Uploaded: \K\d+' /tmp/scrape_output.txt || echo "?")
+          CANDIDATES=$(grep -oP 'Candidate list \(\K[^\)]+' /tmp/scrape_output.txt || echo "?")
+
+          # Grab last error line if failed
+          if [ "$STATUS" != "success" ]; then
+            ERROR=$(grep "❌" /tmp/scrape_output.txt | tail -1 || echo "See run logs")
+            DETAIL="Error: $ERROR"
+          else
+            DETAIL="Candidates: $CANDIDATES | Scraped: $SCRAPED | Uploaded: $UPLOADED"
+          fi
+
           curl -X POST -H 'Content-type: application/json' \
           --data "{
-            \"text\": \"$EMOJI GitHub Action Finished\nRepo: ${{ github.repository }}\nWorkflow: ${{ github.workflow }}\nStatus: $STATUS\nRun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+            \"text\": \"$EMOJI *Daily Stock Scrape* — $STATUS\n$DETAIL\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>\"
           }" \
           ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -29,17 +29,20 @@ jobs:
           GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
 
       - name: Step 1 - Reset Google Sheets
-        run: python weekly/reset.py
+        id: reset
+        run: python weekly/reset.py 2>&1 | tee /tmp/reset_output.txt
         env:
           GOOGLE_CREDENTIALS_PATH: credentials.json
 
       - name: Step 2 - Merge tickers and generate CSVs
-        run: python weekly/merge_tickers.py
+        id: merge
+        run: python weekly/merge_tickers.py 2>&1 | tee /tmp/merge_output.txt
         env:
           GOOGLE_CREDENTIALS_PATH: credentials.json
 
       - name: Step 3 - Run Browse AI robots
-        run: python weekly/run_robots.py
+        id: robots
+        run: python weekly/run_robots.py 2>&1 | tee /tmp/robots_output.txt
         env:
           BROWSE_AI_API_KEY: ${{ secrets.BROWSE_AI_API_KEY }}
           GOOGLE_CREDENTIALS_PATH: credentials.json
@@ -55,8 +58,32 @@ jobs:
             EMOJI="❌"
           fi
 
+          # Step outcomes
+          step_icon() { [ "$1" = "success" ] && echo "✅" || [ "$1" = "skipped" ] && echo "⏭️" || echo "❌"; }
+          RESET_ICON=$(step_icon "${{ steps.reset.outcome }}")
+          MERGE_ICON=$(step_icon "${{ steps.merge.outcome }}")
+          ROBOTS_ICON=$(step_icon "${{ steps.robots.outcome }}")
+
+          # Ticker count from merge step
+          TICKER_COUNT=$(grep -oP 'Created Master_Tickers with \K\d+' /tmp/merge_output.txt 2>/dev/null || echo "?")
+
+          # Grab last error line from whichever step failed
+          ERROR=""
+          if [ "${{ steps.reset.outcome }}" = "failure" ]; then
+            ERROR=$(tail -1 /tmp/reset_output.txt 2>/dev/null || echo "")
+          elif [ "${{ steps.merge.outcome }}" = "failure" ]; then
+            ERROR=$(tail -1 /tmp/merge_output.txt 2>/dev/null || echo "")
+          elif [ "${{ steps.robots.outcome }}" = "failure" ]; then
+            ERROR=$(tail -1 /tmp/robots_output.txt 2>/dev/null || echo "")
+          fi
+
+          ERROR_LINE=""
+          if [ -n "$ERROR" ]; then
+            ERROR_LINE="\nError: $ERROR"
+          fi
+
           curl -X POST -H 'Content-type: application/json' \
           --data "{
-            \"text\": \"$EMOJI GitHub Action Finished\nRepo: ${{ github.repository }}\nWorkflow: ${{ github.workflow }}\nStatus: $STATUS\nRun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+            \"text\": \"$EMOJI *Weekly Earnings Scrape* — $STATUS\n${RESET_ICON} Reset Sheets  ${MERGE_ICON} Merge Tickers ($TICKER_COUNT)  ${ROBOTS_ICON} Browse AI Robots$ERROR_LINE\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>\"
           }" \
           ${{ secrets.SLACK_WEBHOOK_URL }}
