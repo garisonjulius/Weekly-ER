@@ -361,6 +361,7 @@ async function scrapeFinvizData(ticker, browser) {
       earnings:
         pageText.match(/Earnings([A-Za-z]{3} [\d]{1,2} [AP]MC)/i)?.[1] || null,
       recom: pageText.match(/Recom([\d.]+)/i)?.[1] || null,
+      changePercent: pageText.match(/Change([+-]?[\d.]+%)/i)?.[1] || null,
     };
 
     console.log(`✅ Finviz data for ${ticker}: ${JSON.stringify(finvizData)}`);
@@ -386,6 +387,7 @@ async function scrapeFinvizData(ticker, browser) {
       rsi: null,
       earnings: null,
       recom: null,
+      changePercent: null,
     };
   }
 }
@@ -636,7 +638,9 @@ async function scrapeTickerData(ticker, browser, changePct = null) {
     const finviz =
       finvizResult.status === "fulfilled" ? finvizResult.value : finvizNull;
 
-    const row = buildTickerDataRow(ticker, zacks, finviz, changePct);
+    // If changePct wasn't provided (buylist mode), fall back to Finviz's daily change
+    const effectiveChangePct = changePct ?? finviz.changePercent ?? null;
+    const row = buildTickerDataRow(ticker, zacks, finviz, effectiveChangePct);
     console.log(`📊 ${ticker} done.`);
     return row;
   } catch (error) {
