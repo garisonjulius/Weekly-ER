@@ -18,7 +18,7 @@ if (!ANTHROPIC_API_KEY) {
   process.exit(1);
 }
 const SPREADSHEET_ID = "1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ";
-const SHEET_NAME = "Individual";
+let SHEET_NAME = "Individual";
 
 // Claude writes rating to column AE
 const RATING_COL = "AE";
@@ -720,6 +720,158 @@ async function uploadRowToGoogleSheet(dataArray) {
   }
 }
 
+// Scrape Zacks Buy List for tickers added today
+async function scrapeZacksBuylist(browser) {
+  console.log("🔍 Scraping Zacks Buy List...");
+
+  const ZACKS_EMAIL = process.env.ZACKS_EMAIL;
+  const ZACKS_PASSWORD = process.env.ZACKS_PASSWORD;
+
+  if (!ZACKS_EMAIL || !ZACKS_PASSWORD) {
+    console.error("❌ ZACKS_EMAIL and ZACKS_PASSWORD environment variables are required");
+    return [];
+  }
+
+  const BUYLIST_URL = "https://www.zacks.com/stocks/buy-list/?adid=zp_topnav_1list&icid=zacks.com-zacks.com-nav_tracking-zacks_premium-main_menu_wrapper-zacks_1_rank";
+
+  const page = await setupPage(browser);
+
+  try {
+    // Navigate directly to the buy list — it will redirect to the premium login page
+    console.log("🔐 Navigating to buy list (will redirect to premium login)...");
+    await page.goto(BUYLIST_URL, { waitUntil: "networkidle2", timeout: 30000 });
+    await wait(2000);
+
+    // Dismiss cookie banner if present
+    const cookieBtn = await page.$("#accept_cookie");
+    if (cookieBtn) {
+      await cookieBtn.click();
+      await wait(500);
+      console.log("🍪 Dismissed cookie banner");
+    }
+
+    const currentUrl = page.url();
+    console.log(`📍 Landed on: ${currentUrl}`);
+
+    // If redirected to a login page, fill in credentials
+    if (currentUrl.includes("login") || currentUrl.includes("registration")) {
+      console.log("🔑 Premium login required — filling form...");
+
+      console.log("🔑 Filling credentials...");
+
+      // Set values in a way that works for both regular and React-controlled inputs
+      await page.evaluate((email, password) => {
+        function setNativeValue(el, value) {
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+          nativeInputValueSetter.call(el, value);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        const emailEl = document.querySelector("#username");
+        const passwordEl = document.querySelector("#password");
+        if (emailEl) setNativeValue(emailEl, email);
+        if (passwordEl) setNativeValue(passwordEl, password);
+      }, ZACKS_EMAIL, ZACKS_PASSWORD);
+      await wait(500);
+
+      // Click the submit input via JS (bypasses Puppeteer visibility check)
+      await page.evaluate(() => {
+        const submitEl = document.querySelector('input[name="submit"]') || document.querySelector('input[type="submit"]');
+        if (submitEl) submitEl.click();
+      });
+      await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 });
+
+      await wait(2000);
+      const postLoginUrl = page.url();
+      console.log(`✅ Login submitted. Now at: ${postLoginUrl}`);
+
+      if (postLoginUrl.includes("login") || postLoginUrl.includes("registration")) {
+        console.error("❌ Login failed — still on login page after submit");
+        await page.screenshot({ path: "/tmp/zacks_login_fail.png" });
+        await page.close();
+        return [];
+      }
+    } else {
+      console.log("✅ Already logged in — on buy list directly");
+    }
+
+    // Navigate to the buy list page
+    await page.goto(BUYLIST_URL, { waitUntil: "networkidle2", timeout: 60000 });
+    await wait(3000);
+
+    // Build today's date in all formats Zacks might use
+    const today = new Date();
+    const m = String(today.getMonth() + 1);           // no leading zero month: "4"
+    const mm = m.padStart(2, "0");                    // leading zero month:    "04"
+    const d = String(today.getDate());                // no leading zero day:   "1"
+    const dd = d.padStart(2, "0");                    // leading zero day:      "01"
+    const yy = String(today.getFullYear()).slice(-2);
+    const todaySlash = `${mm}/${dd}/${today.getFullYear()}`;  // "04/01/2026"
+    const todaySlashShort = `${mm}/${dd}/${yy}`;              // "04/01/26"
+    const todayNoLeadingZero = `${m}/${d}/${yy}`;             // "4/1/26" ← Zacks format
+
+    console.log(`📅 Looking for Date Added = ${todayNoLeadingZero}`);
+
+    const tickers = await page.evaluate((todaySlash, todaySlashShort, todayNoLeadingZero) => {
+      const results = [];
+
+      // Find the table that has both "Symbol" and "Date Added" headers
+      const tables = document.querySelectorAll("table");
+      let targetTable = null;
+
+      for (const table of tables) {
+        let headerCells = table.querySelectorAll("thead th, thead td");
+        if (headerCells.length === 0) headerCells = table.querySelectorAll("tr:first-child th");
+        const texts = Array.from(headerCells).map((h) => h.textContent.trim().toLowerCase());
+        if (texts.some((t) => t.includes("symbol")) && texts.some((t) => t.includes("date added"))) {
+          targetTable = table;
+          break;
+        }
+      }
+
+      if (!targetTable) return { tickers: [], error: "Table not found" };
+
+      const rows = targetTable.querySelectorAll("tbody tr");
+      for (const row of rows) {
+        // Symbol is in a <th> element; ticker is in the link's rel attribute or hoverquote-symbol span
+        const thCell = row.querySelector("th");
+        const symbolText = (
+          thCell?.querySelector("a[rel]")?.getAttribute("rel")?.trim()?.toUpperCase() ||
+          thCell?.querySelector("span.hoverquote-symbol")?.textContent?.trim()?.replace(/\s/g, "").toUpperCase()
+        );
+        if (!symbolText || !/^[A-Z0-9.]{1,6}$/.test(symbolText)) continue;
+
+        // Date is in <td> cells
+        const tdCells = Array.from(row.querySelectorAll("td"));
+        const hasToday = tdCells.some((td) => {
+          const t = td.textContent.trim();
+          return t === todaySlash || t === todaySlashShort || t === todayNoLeadingZero;
+        });
+        if (!hasToday) continue;
+
+        results.push(symbolText);
+      }
+
+      if (!targetTable) return { tickers: [], error: "Table not found" };
+      return { tickers: results, error: null };
+    }, todaySlash, todaySlashShort, todayNoLeadingZero);
+
+    await page.close();
+
+    if (tickers.error) {
+      console.error(`❌ Scraping error: ${tickers.error}`);
+      return [];
+    }
+
+    console.log(`✅ Found ${tickers.tickers.length} tickers added today: ${tickers.tickers.join(", ") || "none"}`);
+    return tickers.tickers.map((symbol) => ({ symbol, changePct: null }));
+  } catch (error) {
+    console.error("❌ Error scraping Zacks buy list:", error.message);
+    try { await page.close(); } catch (_) {}
+    return [];
+  }
+}
+
 // ============================================================
 // CLAUDE RATINGS — called once after all tickers are uploaded
 // ============================================================
@@ -979,6 +1131,11 @@ async function main() {
   const args = process.argv.slice(2);
   const isLosersMode = args.includes("--losers");
   const isRatingsOnly = args.includes("--ratings");
+  const isZacksBuylistMode = args.includes("--zacks-buylist");
+
+  if (isZacksBuylistMode) {
+    SHEET_NAME = "Zacks #1";
+  }
 
   console.log("🎯 Daily Stock Scraper (Zacks + Finviz + Claude)");
   console.log("=".repeat(50));
@@ -997,7 +1154,15 @@ async function main() {
   let entries = [];
 
   try {
-    if (isLosersMode) {
+    if (isZacksBuylistMode) {
+      console.log("📋 Mode: Zacks #1 Buy List (tickers added today)");
+      entries = await scrapeZacksBuylist(browser);
+      if (entries.length === 0) {
+        console.error("❌ No Zacks buy list tickers found for today. Exiting.");
+        await browser.close();
+        process.exit(1);
+      }
+    } else if (isLosersMode) {
       console.log("📉 Mode: Yahoo Finance Top 25 Losers");
       entries = await scrapeYahooLosers(browser);
       if (entries.length === 0) {
@@ -1030,7 +1195,7 @@ async function main() {
     });
     console.log("=".repeat(50));
 
-    const MAX_OUTPUT = 25;
+    const MAX_OUTPUT = isZacksBuylistMode ? Infinity : 25;
     let uploadedCount = 0;
     let totalScraped = 0;
 

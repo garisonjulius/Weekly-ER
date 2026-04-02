@@ -1,0 +1,61 @@
+name: Zacks Buy List Scrape
+
+on:
+  workflow_dispatch: # Triggered by cron-job.org at 6:00 AM PST Mon-Fri
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Write Google credentials
+        run: echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
+
+      - name: Run Zacks buy list scraper
+        id: scrape
+        run: node daily/daily.js --zacks-buylist 2>&1 | tee /tmp/scrape_output.txt
+        env:
+          GOOGLE_CREDENTIALS_PATH: ${{ github.workspace }}/credentials.json
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          ZACKS_EMAIL: ${{ secrets.ZACKS_EMAIL }}
+          ZACKS_PASSWORD: ${{ secrets.ZACKS_PASSWORD }}
+
+      - name: Notify Slack
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+
+          if [ "$STATUS" = "success" ]; then
+            EMOJI="✅"
+          else
+            EMOJI="❌"
+          fi
+
+          SCRAPED=$(grep -oP 'Total scraped: \K[^,]+' /tmp/scrape_output.txt || echo "?")
+          UPLOADED=$(grep -oP 'Uploaded: \K\d+' /tmp/scrape_output.txt || echo "?")
+          CANDIDATES=$(grep -oP 'Found \K\d+ tickers added today' /tmp/scrape_output.txt || echo "?")
+
+          if [ "$STATUS" != "success" ]; then
+            ERROR=$(grep "❌" /tmp/scrape_output.txt | tail -1 || echo "See run logs")
+            DETAIL="Error: $ERROR"
+          else
+            DETAIL="Candidates: $CANDIDATES | Scraped: $SCRAPED | Uploaded: $UPLOADED"
+          fi
+
+          curl -X POST -H 'Content-type: application/json' \
+          --data "{
+            \"text\": \"$EMOJI *Zacks Buy List Scrape* — $STATUS\n$DETAIL\n<https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>\"
+          }" \
+          ${{ secrets.SLACK_WEBHOOK_URL }}
