@@ -29,7 +29,7 @@ credentials = Credentials.from_service_account_info(
 
 service = build("sheets", "v4", credentials=credentials)
 spreadsheet_id = "1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ"
-sheet_name = "Individual"
+sheet_name = "Price Down"
 
 # Scrape data and upload every 10 stocks
 rows = []

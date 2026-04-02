@@ -18,7 +18,7 @@ if (!ANTHROPIC_API_KEY) {
   process.exit(1);
 }
 const SPREADSHEET_ID = "1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ";
-let SHEET_NAME = "Individual";
+let SHEET_NAME = "Price Down";
 
 // Claude writes rating to column AE
 const RATING_COL = "AE";
