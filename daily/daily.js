@@ -554,8 +554,11 @@ async function scrapeYahooLosers(browser, retries = 2) {
 function buildTickerDataRow(ticker, zacks, finviz, changePct = null) {
   const amcBmo = zacks.amcBmo || null;
   const earningsDate = zacks.earningsDate || null;
-  const today = new Date();
-  const todaysDate = `${today.getMonth() + 1}/${today.getDate()}/${String(today.getFullYear()).slice(-2)}`;
+  const etParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "numeric", day: "numeric",
+  }).formatToParts(new Date()).reduce((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+  const todaysDate = `${etParts.month}/${etParts.day}/${etParts.year.slice(-2)}`;
 
   return [
     todaysDate, // 0:  Today's Date
