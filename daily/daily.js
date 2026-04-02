@@ -799,16 +799,16 @@ async function scrapeZacksBuylist(browser) {
     await page.goto(BUYLIST_URL, { waitUntil: "networkidle2", timeout: 60000 });
     await wait(3000);
 
-    // Build today's date in all formats Zacks might use
-    const today = new Date();
-    const m = String(today.getMonth() + 1);           // no leading zero month: "4"
-    const mm = m.padStart(2, "0");                    // leading zero month:    "04"
-    const d = String(today.getDate());                // no leading zero day:   "1"
-    const dd = d.padStart(2, "0");                    // leading zero day:      "01"
-    const yy = String(today.getFullYear()).slice(-2);
-    const todaySlash = `${mm}/${dd}/${today.getFullYear()}`;  // "04/01/2026"
-    const todaySlashShort = `${mm}/${dd}/${yy}`;              // "04/01/26"
-    const todayNoLeadingZero = `${m}/${d}/${yy}`;             // "4/1/26" ← Zacks format
+    // Build today's date in US Eastern time (Zacks uses ET; GitHub Actions runs in UTC)
+    const easternDate = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+    const m = String(easternDate.getMonth() + 1);    // no leading zero month: "4"
+    const mm = m.padStart(2, "0");                   // leading zero month:    "04"
+    const d = String(easternDate.getDate());          // no leading zero day:   "1"
+    const dd = d.padStart(2, "0");                   // leading zero day:      "01"
+    const yy = String(easternDate.getFullYear()).slice(-2);
+    const todaySlash = `${mm}/${dd}/${easternDate.getFullYear()}`;  // "04/01/2026"
+    const todaySlashShort = `${mm}/${dd}/${yy}`;                    // "04/01/26"
+    const todayNoLeadingZero = `${m}/${d}/${yy}`;                   // "4/1/26" ← Zacks format
 
     console.log(`📅 Looking for Date Added = ${todayNoLeadingZero}`);
 
