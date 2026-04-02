@@ -433,9 +433,8 @@ async function scrapeYahooTableRows(page) {
 }
 
 // Scrape Yahoo Finance losers
-async function scrapeYahooLosers(browser, retries = 2) {
-  console.log("🔍 Scraping Yahoo Finance losers...");
-  const url = "https://finance.yahoo.com/markets/stocks/losers/";
+async function scrapeYahooLosers(browser, retries = 2, url = "https://finance.yahoo.com/markets/stocks/losers/") {
+  console.log(`🔍 Scraping Yahoo Finance losers from ${url}...`);
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -1141,11 +1140,13 @@ async function sortSheetByRecom() {
 async function main() {
   const args = process.argv.slice(2);
   const isLosersMode = args.includes("--losers");
-  const isRatingsOnly = args.includes("--ratings");
+  const is52wLosersMode = args.includes("--52w-losers");
   const isZacksBuylistMode = args.includes("--zacks-buylist");
 
   if (isZacksBuylistMode) {
     SHEET_NAME = "Zacks #1";
+  } else if (is52wLosersMode) {
+    SHEET_NAME = "52W Low";
   }
 
   console.log("🎯 Daily Stock Scraper (Zacks + Finviz + Claude)");
@@ -1170,6 +1171,14 @@ async function main() {
       entries = await scrapeZacksBuylist(browser);
       if (entries.length === 0) {
         console.error("❌ No Zacks buy list tickers found for today. Exiting.");
+        await browser.close();
+        process.exit(1);
+      }
+    } else if (is52wLosersMode) {
+      console.log("📉 Mode: Yahoo Finance 52-Week Losers");
+      entries = await scrapeYahooLosers(browser, 2, "https://finance.yahoo.com/markets/stocks/52-week-losers/");
+      if (entries.length === 0) {
+        console.error("❌ No 52-week losers found. Exiting.");
         await browser.close();
         process.exit(1);
       }
