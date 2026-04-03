@@ -877,141 +877,102 @@ async function scrapeZacksBuylist(browser) {
 // ============================================================
 // CLAUDE RATINGS — called once after all tickers are uploaded
 // ============================================================
+// Uses: Batch API (50% cheaper, async), extended thinking (better analysis),
+//       prompt caching (cached system prompt across all tickers), and
+//       tool use (structured output — no fragile regex parsing).
+
+// Static system prompt — cached across all tickers in the batch via prompt caching.
+const RATING_SYSTEM_PROMPT = `You are an expert stock analyst. You will receive financial data for a stock. Your job is to evaluate it thoroughly and call the submit_rating tool with your assessment.
+
+Evaluate using:
+- Earnings momentum: EPS growth, surprises, Earnings ESP
+- Valuation: P/E, Forward P/E, PEG relative to growth rate
+- Quality: ROE, ROIC, Profit Margin
+- Technical: RSI (>70 overbought, <30 oversold), recent price performance
+- Analyst consensus: Recom score (1=Strong Buy, 5=Strong Sell — lower is better)
+- Recent news, catalysts, or risks found via web search
+
+Valid ratings: Strong Buy, Buy, Moderate Buy, Watch, Hold, Sell, Avoid.`;
+
+// Tool definition — forces structured JSON output instead of free-text parsing.
+const RATING_TOOL = {
+  name: "submit_rating",
+  description: "Submit the final stock rating and a brief explanation",
+  input_schema: {
+    type: "object",
+    properties: {
+      rating: {
+        type: "string",
+        enum: ["Strong Buy", "Buy", "Moderate Buy", "Watch", "Hold", "Sell", "Avoid"],
+      },
+      explanation: {
+        type: "string",
+        description: "1-2 sentences referencing both the financial data and any recent news found",
+      },
+    },
+    required: ["rating", "explanation"],
+  },
+};
 
 /**
- * Calls Claude API with web search for a single ticker.
- * Returns { rating } or N/A on failure.
+ * Builds a single Batch API request object for one row.
+ * custom_id uses the ticker so results can be mapped back easily.
  */
-async function getClaudeRating(row) {
+function buildRatingRequest(row) {
   const ticker = row[3] || "N/A";
-
-  // Build context from the row data
-  const data = {
-    price: row[5],
-    epsCurrentQtr: row[6],
-    earningsEsp: row[7],
-    epsGrowthPct: row[8],
-    lastEpsSurprise: row[9],
-    zacksRank: row[10],
-    vgm: row[11],
-    industryRank: row[12],
-    industry: row[13],
-    pe: row[16],
-    forwardPE: row[17],
-    peg: row[18],
-    roe: row[19],
-    roic: row[20],
-    profitMargin: row[21],
-    epsYOY: row[22],
-    salesYOY: row[23],
-    rsi: row[24],
-    perfQuarter: row[25],
-    perfYear: row[26],
-    recom: row[27],
-    debtEq: row[28],
-    changePct: row[29],
-  };
-
-  const prompt = `You are a stock analyst. Evaluate ${ticker} using the financial data below AND search the web for recent news, catalysts, or risks.
+  const userMessage = `Evaluate ${ticker} using the financial data below AND search the web for recent news, catalysts, or risks. Then call submit_rating with your assessment.
 
 FINANCIAL DATA:
-- Price: ${data.price} | Change: ${data.changePct}
-- Zacks Rank: ${data.zacksRank} | VGM: ${data.vgm} | Industry: ${data.industry} (${data.industryRank})
-- EPS Current Qtr: ${data.epsCurrentQtr} | EPS Growth: ${data.epsGrowthPct} | Last EPS Surprise: ${data.lastEpsSurprise}
-- Earnings ESP: ${data.earningsEsp}
-- P/E: ${data.pe} | Forward P/E: ${data.forwardPE} | PEG: ${data.peg}
-- ROE: ${data.roe} | ROIC: ${data.roic} | Profit Margin: ${data.profitMargin}
-- EPS Y/Y: ${data.epsYOY} | Sales Y/Y: ${data.salesYOY}
-- RSI: ${data.rsi} | Perf Quarter: ${data.perfQuarter} | Perf Year: ${data.perfYear}
-- Analyst Recom: ${data.recom} | Debt/Eq: ${data.debtEq}
+- Price: ${row[5]} | Change: ${row[29]}
+- Zacks Rank: ${row[10]} | VGM: ${row[11]} | Industry: ${row[13]} (${row[12]})
+- EPS Current Qtr: ${row[6]} | EPS Growth: ${row[8]} | Last EPS Surprise: ${row[9]}
+- Earnings ESP: ${row[7]}
+- P/E: ${row[16]} | Forward P/E: ${row[17]} | PEG: ${row[18]}
+- ROE: ${row[19]} | ROIC: ${row[20]} | Profit Margin: ${row[21]}
+- EPS Y/Y: ${row[22]} | Sales Y/Y: ${row[23]}
+- RSI: ${row[24]} | Perf Quarter: ${row[25]} | Perf Year: ${row[26]}
+- Analyst Recom: ${row[27]} | Debt/Eq: ${row[28]}`;
 
-Rate as: Strong Buy, Buy, Moderate Buy, Watch, Hold, Sell, or Avoid.
-
-Respond in exactly this format (two lines only, no other text):
-RATING: <your rating>
-EXPLANATION: <1-2 sentence justification referencing both the data and any recent news>`;
-
-  const body = {
-    model: "claude-sonnet-4-6",
-    max_tokens: 1024,
-    messages: [{ role: "user", content: prompt }],
-    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
+  return {
+    custom_id: `ticker-${ticker}`,
+    params: {
+      model: "claude-sonnet-4-6",
+      max_tokens: 5000,
+      // Extended thinking: Claude reasons through the data before committing to a rating.
+      thinking: { type: "enabled", budget_tokens: 3000 },
+      // Prompt caching: system prompt is identical for every ticker — cached after first request.
+      system: [{ type: "text", text: RATING_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: userMessage }],
+      tools: [
+        // Web search for recent news
+        { type: "web_search_20250305", name: "web_search", max_uses: 2 },
+        // Structured output tool — Claude must call this to return its rating
+        RATING_TOOL,
+      ],
+      tool_choice: { type: "auto" }, // allows web_search first, then submit_rating
+    },
   };
-
-  try {
-    console.log(`  📡 Sending API request for ${ticker}...`);
-    const startTime = Date.now();
-
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60000), // 60s timeout
-    });
-
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`  📥 Response received in ${elapsed}s (status: ${res.status})`);
-
-    const json = await res.json();
-    if (json.error) {
-      console.error(`❌ Claude API error for ${ticker}:`, json.error.message);
-      return { rating: "N/A" };
-    }
-
-    // Log content block types so we can see what Claude did
-    const blockTypes = json.content.map((b) => b.type).join(", ");
-    console.log(`  📦 Response blocks: [${blockTypes}]`);
-
-    // Search ALL text blocks for the rating (not just the last one)
-    const textBlocks = json.content.filter((b) => b.type === "text");
-    console.log(`  📝 Text blocks (${textBlocks.length}):`);
-    textBlocks.forEach((b, idx) => console.log(`     [${idx}] "${b.text.trim().substring(0, 100)}"`));
-
-    // Combine all text blocks to search for rating and explanation
-    const allText = textBlocks.map((b) => b.text).join("\n");
-
-    let rating = "Hold";
-    let explanation = "";
-    const ratingMatch = allText.match(
-      /RATING:\s*(Strong Buy|Buy|Moderate Buy|Watch|Hold|Sell|Avoid)/i,
-    );
-    if (ratingMatch) {
-      rating = ratingMatch[1].trim();
-    } else {
-      console.log(`  ⚠️ No rating match found in any text block, defaulting to "Hold"`);
-    }
-
-    const explMatch = allText.match(/EXPLANATION:\s*(.+)/i);
-    if (explMatch) {
-      explanation = explMatch[1].trim();
-    }
-
-    return { rating, explanation };
-  } catch (err) {
-    console.error(
-      `❌ Network error calling Claude for ${ticker}:`,
-      err.message,
-    );
-    return { rating: "N/A" };
-  }
 }
 
+const BATCH_API_HEADERS = {
+  "Content-Type": "application/json",
+  "x-api-key": ANTHROPIC_API_KEY,
+  "anthropic-version": "2023-06-01",
+  "anthropic-beta": "message-batches-2024-09-24",
+};
+
 /**
- * Reads all populated rows from the sheet, calls Claude for each,
- * then batch-writes Rating (AD) and Explanation (AE) back.
+ * Submits all rows to the Batch API, polls until complete,
+ * then writes Rating (AE) and Explanation (AF) back to the sheet in one call.
  */
 async function runClaudeRatings(uploadedCount) {
-  console.log("\n🤖 Running Claude ratings for all uploaded stocks...");
+  console.log("\n🤖 Running Claude ratings (Batch API)...");
   console.log("=".repeat(50));
 
   try {
     const sheets = await getAuthenticatedSheets();
 
-    // Read all data rows — if uploadedCount given, scope it; otherwise read all
+    // Read all data rows
     const readRange = uploadedCount
       ? `'${SHEET_NAME}'!A2:AC${1 + uploadedCount}`
       : `'${SHEET_NAME}'!A2:AC`;
@@ -1027,57 +988,84 @@ async function runClaudeRatings(uploadedCount) {
       return;
     }
 
-    console.log(`📊 Found ${rows.length} rows to rate`);
-    // Preview tickers found
-    const tickers = rows.map((r) => r[3] || "???").join(", ");
-    console.log(`📋 Tickers: ${tickers}`);
+    const tickerList = rows.map((r) => r[3] || "???").join(", ");
+    console.log(`📊 Submitting batch for ${rows.length} stocks: ${tickerList}`);
 
-    // Call Claude in parallel batches of 3, write ratings immediately
-    const BATCH_SIZE = 3;
-    for (let batchStart = 0; batchStart < rows.length; batchStart += BATCH_SIZE) {
-      const batch = rows.slice(batchStart, batchStart + BATCH_SIZE);
-      const batchNum = Math.floor(batchStart / BATCH_SIZE) + 1;
-      const totalBatches = Math.ceil(rows.length / BATCH_SIZE);
-      console.log(`\n📦 Batch ${batchNum}/${totalBatches}`);
+    // Submit all tickers as a single batch
+    const batchRes = await fetch("https://api.anthropic.com/v1/messages/batches", {
+      method: "POST",
+      headers: BATCH_API_HEADERS,
+      body: JSON.stringify({ requests: rows.map(buildRatingRequest) }),
+    });
+    const batch = await batchRes.json();
+    if (batch.error) {
+      console.error("❌ Batch submission failed:", batch.error.message);
+      return;
+    }
+    console.log(`✅ Batch submitted: ${batch.id} (${batch.request_counts.processing} requests)`);
 
-      const results = await Promise.allSettled(
-        batch.map(async (row, j) => {
-          const i = batchStart + j;
-          const ticker = row[3] || `Row ${i + 2}`;
-          const sheetRow = i + 2;
-          console.log(`  🤖 [${i + 1}/${rows.length}] Getting Claude rating for ${ticker}...`);
+    // Poll until all requests are done — backs off up to 2 min between polls
+    let status = batch;
+    let pollCount = 0;
+    while (status.processing_status !== "ended") {
+      pollCount++;
+      const delaySec = Math.min(30 * pollCount, 120);
+      console.log(`⏳ Batch running... next poll in ${delaySec}s (poll #${pollCount})`);
+      await wait(delaySec * 1000);
 
-          const { rating, explanation } = await getClaudeRating(row);
-
-          const cellRange = `'${SHEET_NAME}'!${RATING_COL}${sheetRow}`;
-          await sheets.spreadsheets.values.update({
-            spreadsheetId: SPREADSHEET_ID,
-            range: cellRange,
-            valueInputOption: "RAW",
-            requestBody: { values: [[rating, explanation]] },
-          });
-          console.log(`  ✅ ${ticker}: ${rating} → ${explanation}`);
-          return { ticker, rating };
-        })
-      );
-
-      // Log any failures
-      results.forEach((r, j) => {
-        if (r.status === "rejected") {
-          const ticker = batch[j]?.[3] || "???";
-          console.error(`  ❌ Failed to rate ${ticker}, skipping: ${r.reason?.message}`);
-        }
+      const pollRes = await fetch(`https://api.anthropic.com/v1/messages/batches/${batch.id}`, {
+        headers: BATCH_API_HEADERS,
       });
+      status = await pollRes.json();
+      console.log(`📊 ${status.processing_status} | succeeded: ${status.request_counts.succeeded} | errored: ${status.request_counts.errored}`);
+    }
 
-      if (batchStart + BATCH_SIZE < rows.length) {
-        console.log(`  ⏳ Waiting 15s before next batch (rate limit)...`);
-        await wait(15000);
+    // Fetch JSONL results
+    console.log("\n📥 Fetching results...");
+    const resultsRes = await fetch(`https://api.anthropic.com/v1/messages/batches/${batch.id}/results`, {
+      headers: BATCH_API_HEADERS,
+    });
+    const resultsText = await resultsRes.text();
+
+    // Parse each result line and map ticker -> { rating, explanation }
+    const ratingsMap = {};
+    for (const line of resultsText.trim().split("\n").filter(Boolean)) {
+      const result = JSON.parse(line);
+      const ticker = result.custom_id.replace("ticker-", "");
+
+      if (result.result.type !== "succeeded") {
+        console.error(`❌ ${ticker}: ${result.result.error?.message}`);
+        ratingsMap[ticker] = { rating: "N/A", explanation: "" };
+        continue;
+      }
+
+      const toolUse = result.result.message.content.find(
+        (b) => b.type === "tool_use" && b.name === "submit_rating"
+      );
+      if (toolUse) {
+        ratingsMap[ticker] = { rating: toolUse.input.rating, explanation: toolUse.input.explanation };
+        console.log(`  ✅ ${ticker}: ${toolUse.input.rating} — ${toolUse.input.explanation}`);
+      } else {
+        console.error(`  ⚠️ ${ticker}: no submit_rating call found`);
+        ratingsMap[ticker] = { rating: "N/A", explanation: "" };
       }
     }
 
-    console.log(
-      `\n✅ Claude ratings written to column AE for ${rows.length} stocks`,
-    );
+    // Write all ratings to sheet in a single batchUpdate call
+    console.log("\n📝 Writing ratings to sheet...");
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        valueInputOption: "RAW",
+        data: rows.map((row, i) => {
+          const ticker = row[3] || "";
+          const { rating, explanation } = ratingsMap[ticker] || { rating: "N/A", explanation: "" };
+          return { range: `'${SHEET_NAME}'!${RATING_COL}${i + 2}`, values: [[rating, explanation]] };
+        }),
+      },
+    });
+
+    console.log(`\n✅ Claude ratings written to column ${RATING_COL} for ${rows.length} stocks`);
   } catch (error) {
     console.error("❌ Error running Claude ratings:", error.message);
   }
