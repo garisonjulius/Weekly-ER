@@ -56,9 +56,9 @@ def get_earnings_for_date(driver, date: str) -> list[tuple[str, str, str]]:
                         if ticker and "%" not in ticker:
                             if not any(t[0] == ticker for t in results + page_results):
                                 page_results.append((ticker, call_time, date))
-                except:
+                except Exception:
                     continue
-        except:
+        except Exception:
             break
 
         if not page_results:
