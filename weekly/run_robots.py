@@ -49,7 +49,11 @@ def read_urls(csv_path):
 
 
 def run_bulk(robot_name, robot_id, urls):
-    """Send a bulk run request to Browse AI for a list of URLs (fire and forget)."""
+    """Send a bulk run request to Browse AI for a list of URLs (fire and forget).
+    Returns True if all chunks succeeded, False if any failed.
+    """
+    all_succeeded = True
+
     for i in range(0, len(urls), CHUNK_SIZE):
         chunk = urls[i : i + CHUNK_SIZE]
         chunk_num = (i // CHUNK_SIZE) + 1
@@ -78,14 +82,19 @@ def run_bulk(robot_name, robot_id, urls):
             print(f"    Started bulk run: {bulk_run_id}")
         else:
             print(f"    Error {resp.status_code}: {resp.text}")
+            all_succeeded = False
 
         # Small delay between requests to avoid rate limiting
         if i + CHUNK_SIZE < len(urls):
             time.sleep(2)
 
+    return all_succeeded
+
 
 def main():
     print("Starting Browse AI bulk runs...\n")
+
+    had_error = False
 
     for name, config in ROBOTS.items():
         csv_path = config["csv"]
@@ -103,12 +112,18 @@ def main():
 
         print(f"{name} ({len(urls)} URLs from {csv_path})")
 
-        run_bulk(name, robot_id, urls)
+        success = run_bulk(name, robot_id, urls)
+        if not success:
+            had_error = True
 
         print()
         time.sleep(2)
 
-    print("All bulk runs submitted.")
+    if had_error:
+        print("Some bulk runs failed — check errors above.")
+        sys.exit(1)
+
+    print("All bulk runs submitted successfully.")
 
 
 if __name__ == "__main__":
