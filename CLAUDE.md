@@ -46,7 +46,7 @@ Filters applied before uploading (all modes):
 
 Zacks scrape retries once (5s delay) before falling back to null values.
 
-After upload, sheet is sorted by Recom ascending. Claude ratings (column AE) are currently disabled.
+After upload, sheet is sorted by Recom ascending. Claude ratings (column AE) are intentionally disabled — `runClaudeRatings(uploadedCount)` is commented out in `daily.js` and should stay that way until re-enabled deliberately.
 
 ### `--losers` → `Price Down` sheet
 Scrapes Yahoo Finance top daily losers. Caps at 25 uploaded rows. Runs at 6:45 AM and 10:00 AM PST — the 10 AM run clears and refreshes the morning data.
