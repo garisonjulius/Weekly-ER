@@ -1,7 +1,7 @@
 name: 52W Low Stock Scrape
 
 on:
-  workflow_dispatch: # Triggered by cron-job.org at 6:00 AM PST Mon-Fri
+  workflow_dispatch: # Triggered by cron-job.org at 6:00 AM PST Mon-Fri (same time as Zacks Buy List)
 
 jobs:
   scrape:

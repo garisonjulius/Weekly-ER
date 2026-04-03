@@ -111,34 +111,40 @@ async function setupFinvizPage(browser) {
   return page;
 }
 
+const ZACKS_NULL = {
+  price: null,
+  zacksRank: null,
+  vgm: null,
+  industryRank: null,
+  industry: null,
+  amcBmo: null,
+  earningsDate: null,
+  epsCurrentQuarter: null,
+  lastEpsSurprise: null,
+  earningsEsp: null,
+  epsGrowthCurrentQuarter: null,
+  magnitude90Days: null,
+  yearOverYearGrowth: null,
+};
+
 // Scrape Zacks stock quote page for a single ticker
 async function scrapeZacksData(ticker, browser) {
-  console.log(`🔍 Scraping Zacks data for ${ticker}...`);
   const url = `https://www.zacks.com/stock/quote/${ticker.toUpperCase()}/detailed-earning-estimates`;
+  const MAX_RETRIES = 2;
 
-  const nullResult = {
-    price: null,
-    zacksRank: null,
-    vgm: null,
-    industryRank: null,
-    industry: null,
-    amcBmo: null,
-    earningsDate: null,
-    epsCurrentQuarter: null,
-    lastEpsSurprise: null,
-    earningsEsp: null,
-    epsGrowthCurrentQuarter: null,
-    magnitude90Days: null,
-    yearOverYearGrowth: null,
-  };
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 1) {
+      console.log(`🔄 Retry ${attempt}/${MAX_RETRIES} for Zacks ${ticker}...`);
+      await wait(5000);
+    }
+    console.log(`🔍 Scraping Zacks data for ${ticker}${attempt > 1 ? ` (attempt ${attempt})` : ""}...`);
+    try {
+      const page = await setupPage(browser);
 
-  try {
-    const page = await setupPage(browser);
+      await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+      await wait(5000);
 
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-    await wait(5000);
-
-    const data = await page.evaluate(() => {
+      const data = await page.evaluate(() => {
       function getTableCellByLabel(tableSelector, labelText, colIndex = 1) {
         const table = document.querySelector(tableSelector);
         if (!table) return null;
@@ -296,15 +302,16 @@ async function scrapeZacksData(ticker, browser) {
         magnitude90Days,
         yearOverYearGrowth,
       };
-    });
+      });
 
-    await page.close();
-    console.log(`✅ Successfully scraped Zacks data for ${ticker}`);
-    return data;
-  } catch (error) {
-    console.error(`❌ Error scraping Zacks data for ${ticker}:`, error.message);
-    return nullResult;
+      await page.close();
+      console.log(`✅ Successfully scraped Zacks data for ${ticker}`);
+      return data;
+    } catch (error) {
+      console.error(`❌ Error scraping Zacks data for ${ticker} (attempt ${attempt}/${MAX_RETRIES}):`, error.message);
+    }
   }
+  return ZACKS_NULL;
 }
 
 // Scrape Finviz data for a single ticker
@@ -596,21 +603,6 @@ function buildTickerDataRow(ticker, zacks, finviz, changePct = null) {
 async function scrapeTickerData(ticker, browser, changePct = null) {
   console.log(`🚀 Scraping ${ticker}...`);
 
-  const zacksNull = {
-    price: null,
-    zacksRank: null,
-    vgm: null,
-    industryRank: null,
-    industry: null,
-    amcBmo: null,
-    earningsDate: null,
-    epsCurrentQuarter: null,
-    lastEpsSurprise: null,
-    earningsEsp: null,
-    epsGrowthCurrentQuarter: null,
-    magnitude90Days: null,
-    yearOverYearGrowth: null,
-  };
   const finvizNull = {
     companyName: null,
     pe: null,
@@ -636,7 +628,7 @@ async function scrapeTickerData(ticker, browser, changePct = null) {
     ]);
 
     const zacks =
-      zacksResult.status === "fulfilled" ? zacksResult.value : zacksNull;
+      zacksResult.status === "fulfilled" ? zacksResult.value : ZACKS_NULL;
     const finviz =
       finvizResult.status === "fulfilled" ? finvizResult.value : finvizNull;
 
@@ -647,7 +639,7 @@ async function scrapeTickerData(ticker, browser, changePct = null) {
     return row;
   } catch (error) {
     console.error(`❌ Error scraping ${ticker}:`, error.message);
-    return buildTickerDataRow(ticker, zacksNull, finvizNull, changePct);
+    return buildTickerDataRow(ticker, ZACKS_NULL, finvizNull, changePct);
   }
 }
 
@@ -686,7 +678,7 @@ async function clearIndividualSheet() {
       spreadsheetId: SPREADSHEET_ID,
       range: `'${SHEET_NAME}'!A2:ZZ`,
     });
-    console.log("🧹 Cleared Individual sheet from row 2 onwards");
+    console.log(`🧹 Cleared '${SHEET_NAME}' sheet from row 2 onwards`);
   } catch (error) {
     console.error("❌ Error clearing sheet:", error.message);
   }
@@ -940,7 +932,7 @@ RATING: <your rating>
 EXPLANATION: <1-2 sentence justification referencing both the data and any recent news>`;
 
   const body = {
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 1024,
     messages: [{ role: "user", content: prompt }],
     tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 1 }],
@@ -1170,9 +1162,9 @@ async function main() {
       console.log("📋 Mode: Zacks #1 Buy List (tickers added today)");
       entries = await scrapeZacksBuylist(browser);
       if (entries.length === 0) {
-        console.error("❌ No Zacks buy list tickers found for today. Exiting.");
+        console.log("ℹ️ No Zacks #1 tickers added today. Nothing to do.");
         await browser.close();
-        process.exit(1);
+        process.exit(0);
       }
     } else if (is52wLosersMode) {
       console.log("📉 Mode: Yahoo Finance 52-Week Losers");
