@@ -1,3 +1,4 @@
+import csv
 import sys
 import time
 from datetime import datetime, timedelta
@@ -145,10 +146,12 @@ def main():
     try:
         results = get_earnings_tickers(start_date, num_days)
 
-        # Write results to file (overwrites if exists)
-        with open("Yahoo_Ticker", "w") as f:
+        # Write results to file as CSV (overwrites if exists)
+        with open("Yahoo_Ticker", "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(["ticker", "call_time", "date"])
             for ticker, call_time, date in results:
-                f.write(f"('{ticker}', '{call_time}', '{date}')\n")
+                writer.writerow([ticker, call_time, date])
 
         print(f"Found {len(results)} tickers. Written to Yahoo_Ticker")
     except ImportError as e:

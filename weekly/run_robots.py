@@ -1,12 +1,13 @@
 import csv
 import os
+import sys
 import time
 import requests
 
-API_KEY = os.environ.get(
-    "BROWSE_AI_API_KEY",
-    "fa89bf1d-7d0b-496f-a92e-e03567cb9de5:efde2f3c-78b5-4074-86d7-064a5db1d039",
-)
+API_KEY = os.environ.get("BROWSE_AI_API_KEY")
+if not API_KEY:
+    print("Error: BROWSE_AI_API_KEY environment variable is not set")
+    sys.exit(1)
 API_BASE = "https://api.browse.ai/v2"
 
 ROBOTS = {

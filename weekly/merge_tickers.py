@@ -1,6 +1,6 @@
-import os
-import re
+import csv
 import json
+import os
 
 # Useage: 
 # python merge_tickers.py 
@@ -75,20 +75,18 @@ def merge_tickers():
     """
     master = {}  # ticker -> earnings_time
 
-    # Parse Yahoo_Ticker file
+    # Parse Yahoo_Ticker file (CSV format: ticker, call_time, date)
     try:
         with open("Yahoo_Ticker", "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
+            reader = csv.reader(f)
+            next(reader, None)  # skip header row
+            for row in reader:
+                if len(row) < 2:
                     continue
-                # Parse tuple format: ('JNJ', 'TAS', '2026-01-21')
-                match = re.match(r"\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)", line)
-                if match:
-                    ticker = match.group(1).upper()
-                    call_time = match.group(2).upper()
-                    if ticker not in master:
-                        master[ticker] = call_time
+                ticker = row[0].strip().upper()
+                call_time = row[1].strip().upper()
+                if ticker and ticker not in master:
+                    master[ticker] = call_time
     except FileNotFoundError:
         print("Warning: Yahoo_Ticker not found")
 
