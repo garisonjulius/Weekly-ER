@@ -1,7 +1,7 @@
 name: Daily Stock Scrape
 
 on:
-  workflow_dispatch: # Triggered by cron-job.org at 6:45 AM and 10:00 AM PST Mon-Fri
+  workflow_dispatch: # Triggered by cron-job.org at 7:00 AM, 9:00 AM, and 11:00 AM PST Mon-Fri
 
 jobs:
   scrape:

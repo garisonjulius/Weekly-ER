@@ -1,9 +1,8 @@
 import csv
-import json
-import os
+from config import SPREADSHEET_ID
+from sheets_auth import get_sheets_service
 
-# Useage: 
-# python merge_tickers.py 
+
 def upload_to_google_sheets(data):
     """
     Upload ticker data to Google Sheets 'Master_Tickers' sheet.
@@ -13,44 +12,20 @@ def upload_to_google_sheets(data):
         data: List of tuples (ticker, earnings_time)
     """
     try:
-        from google.oauth2.service_account import Credentials
-        from googleapiclient.discovery import build
-    except ImportError:
-        print("Warning: Google API libraries not installed. Run: pip install google-api-python-client google-auth")
-        return False
-
-    try:
-        # Load credentials
-        creds_path = os.environ.get(
-            "GOOGLE_CREDENTIALS_PATH",
-            "/Users/garisonjulius/Downloads/revised_stock/credentials.json",
-        )
-        with open(creds_path, "r") as f:
-            creds_data = json.load(f)
-
-        credentials = Credentials.from_service_account_info(
-            creds_data,
-            scopes=["https://www.googleapis.com/auth/spreadsheets"]
-        )
-
-        service = build("sheets", "v4", credentials=credentials)
-        spreadsheet_id = "1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ"
+        service = get_sheets_service()
         sheet_name = "Master_Tickers"
 
-        # Clear existing data in the sheet
         service.spreadsheets().values().clear(
-            spreadsheetId=spreadsheet_id,
+            spreadsheetId=SPREADSHEET_ID,
             range=f"'{sheet_name}'!A:B"
         ).execute()
 
-        # Prepare data with headers
-        values = [["Ticker", "Earnings Call"]]  # Header row
+        values = [["Ticker", "Earnings Call"]]
         for ticker, earnings_time in data:
             values.append([ticker, earnings_time])
 
-        # Write data to sheet
         service.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id,
+            spreadsheetId=SPREADSHEET_ID,
             range=f"'{sheet_name}'!A1",
             valueInputOption="RAW",
             body={"values": values}
@@ -59,9 +34,6 @@ def upload_to_google_sheets(data):
         print(f"Successfully uploaded {len(data)} tickers to Google Sheets 'Master_Tickers'")
         return True
 
-    except FileNotFoundError:
-        print(f"Warning: Credentials file not found at {creds_path}")
-        return False
     except Exception as e:
         print(f"Error uploading to Google Sheets: {e}")
         return False
