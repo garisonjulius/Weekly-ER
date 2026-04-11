@@ -1140,7 +1140,9 @@ async function main() {
   //   return;
   // }
 
-  await clearIndividualSheet();
+  if (!isZacksBuylistMode) {
+    await clearIndividualSheet();
+  }
 
   const browser = await createBrowser();
   let entries = [];

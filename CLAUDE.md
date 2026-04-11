@@ -9,8 +9,8 @@ weekly/         # Saturday prep scripts (run locally before Sunday GH Actions)
 daily/          # Daily stock scraper (runs via GitHub Actions Mon-Fri)
 .github/workflows/
   weekly_scrape.yml     # Runs every Sunday 6 AM PST
-  daily_scrape.yml      # Triggered by cron-job.org at 7:00 AM, 9:00 AM, and 11:00 AM PST Mon-Fri
-  52w_low_scrape.yml    # Triggered by cron-job.org at 8:00 AM and 12:00 PM PST Mon-Fri
+  daily_scrape.yml      # Triggered by cron-job.org at 6:45 AM, 9:30 AM, and 12:00 PM PST Mon-Fri
+  52w_low_scrape.yml    # Triggered by cron-job.org at 9:00 AM PST Mon-Fri
   zacks_buylist.yml     # Triggered by cron-job.org at 6:00 AM PST Mon-Fri
 ```
 
@@ -49,10 +49,10 @@ Zacks scrape retries once (5s delay) before falling back to null values.
 After upload, sheet is sorted by Recom ascending. Claude ratings (column AE) are intentionally disabled — `runClaudeRatings(uploadedCount)` is commented out in `daily.js` and should stay that way until re-enabled deliberately.
 
 ### `--losers` → `Price Down` sheet
-Scrapes Yahoo Finance top daily losers. Caps at 25 uploaded rows. Runs at 7:00 AM, 9:00 AM, and 11:00 AM PST — later runs clear and refresh earlier data.
+Scrapes Yahoo Finance top daily losers. Caps at 25 uploaded rows. Runs at 6:45 AM, 9:30 AM, and 12:00 PM PST — later runs clear and refresh earlier data.
 
 ### `--52w-losers` → `52W Low` sheet
-Scrapes Yahoo Finance 52-week losers. Runs at 8:00 AM and 12:00 PM PST.
+Scrapes Yahoo Finance 52-week losers. Runs at 9:00 AM PST.
 
 ### `--zacks-buylist` → `Zacks #1` sheet
 Logs into Zacks Premium and scrapes tickers added to the #1 Buy List today. No upload cap. Exits cleanly (code 0) if no tickers were added today. Requires `ZACKS_EMAIL` and `ZACKS_PASSWORD` secrets. Runs at 6:00 AM PST.
