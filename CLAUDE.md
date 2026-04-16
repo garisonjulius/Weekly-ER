@@ -11,7 +11,7 @@ daily/          # Daily stock scraper (runs via GitHub Actions Mon-Fri)
   weekly_scrape.yml     # Runs every Sunday 6 AM PST
   daily_scrape.yml      # Triggered by cron-job.org at 6:45 AM, 9:30 AM, and 12:00 PM PST Mon-Fri
   52w_low_scrape.yml    # Triggered by cron-job.org at 9:00 AM PST Mon-Fri
-  zacks_buylist.yml     # Triggered by cron-job.org at 6:00 AM PST Mon-Fri
+  zacks_buylist.yml     # Triggered by cron-job.org at 6:00 AM PST Mon-Sat
 ```
 
 ## Running Scripts
@@ -55,7 +55,7 @@ Scrapes Yahoo Finance top daily losers. Caps at 25 uploaded rows. Runs at 6:45 A
 Scrapes Yahoo Finance 52-week losers. Runs at 9:00 AM PST.
 
 ### `--zacks-buylist` → `Zacks #1` sheet
-Logs into Zacks Premium and scrapes tickers added to the #1 Buy List today. No upload cap. Exits cleanly (code 0) if no tickers were added today. Requires `ZACKS_EMAIL` and `ZACKS_PASSWORD` secrets. Runs at 6:00 AM PST.
+Logs into Zacks Premium and scrapes tickers added to the #1 Buy List today. No upload cap. Exits cleanly (code 0) if no tickers were added today. Requires `ZACKS_EMAIL` and `ZACKS_PASSWORD` secrets. Runs at 6:00 AM PST Mon-Sat.
 
 ## Environment Variables
 

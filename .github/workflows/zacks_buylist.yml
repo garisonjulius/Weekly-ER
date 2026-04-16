@@ -1,7 +1,7 @@
 name: Zacks Buy List Scrape
 
 on:
-  workflow_dispatch: # Triggered by cron-job.org at 6:00 AM PST Mon-Fri (same time as 52W Low)
+  workflow_dispatch: # Triggered by cron-job.org at 6:00 AM PST Mon-Sat
 
 jobs:
   scrape:
