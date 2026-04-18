@@ -14,6 +14,14 @@ daily/          # Daily stock scraper (runs via GitHub Actions Mon-Fri)
   zacks_buylist.yml     # Triggered by cron-job.org at 6:00 AM PST Mon-Sat
 ```
 
+## Daylight Saving Time
+
+cron-job.org schedules are in UTC. When the US clocks change, update the cron-job.org triggers to keep the same local time:
+- **Spring forward (March):** subtract 1 hour from UTC times (PST → PDT, UTC-8 → UTC-7)
+- **Fall back (November):** add 1 hour to UTC times (PDT → PST, UTC-7 → UTC-8)
+
+The weekly_scrape.yml cron (`0 14 * * 0`) is defined in the workflow file itself and also needs updating at DST changes.
+
 ## Running Scripts
 
 Always run from the project root:
