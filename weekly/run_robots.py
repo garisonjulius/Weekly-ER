@@ -16,7 +16,7 @@ ROBOTS = {
         "csv": "zacks.csv",
     },
     "Finviz": {
-        "id": "019be2dd-2a39-72db-93f0-bb010063d312",
+        "id": "019db24f-6f7b-71df-b133-543236c714f9",
         "csv": "finviz.csv",
     },
     "Stock Analysis": {
