@@ -1,10 +1,7 @@
 name: Weekly Earnings Scrape
 
 on:
-  schedule:
-    # Every Sunday at 6:00 AM PST (2:00 PM UTC)
-    - cron: "0 14 * * 0"
-  workflow_dispatch: # Allow manual trigger
+  workflow_dispatch: # Triggered by cron-job.org at 6:00 AM PST Sunday
 
 jobs:
   scrape:

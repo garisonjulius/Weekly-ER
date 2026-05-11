@@ -20,7 +20,6 @@ cron-job.org schedules are in UTC. When the US clocks change, update the cron-jo
 - **Spring forward (March):** subtract 1 hour from UTC times (PST → PDT, UTC-8 → UTC-7)
 - **Fall back (November):** add 1 hour to UTC times (PDT → PST, UTC-7 → UTC-8)
 
-The weekly_scrape.yml cron (`0 14 * * 0`) is defined in the workflow file itself and also needs updating at DST changes.
 
 ## Running Scripts
 
