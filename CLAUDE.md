@@ -63,7 +63,7 @@ Scrapes Yahoo Finance top daily losers. Caps at 25 uploaded rows. Runs at 6:45 A
 Scrapes Yahoo Finance 52-week losers. Runs at 9:00 AM PST.
 
 ### `--zacks-buylist` → `Zacks #1` sheet
-Logs into Zacks Premium and scrapes tickers added to the #1 Buy List today. No upload cap. Exits cleanly (code 0) if no tickers were added today. Requires `ZACKS_EMAIL` and `ZACKS_PASSWORD` secrets. Runs at 6:00 AM PST Mon-Sat.
+Logs into Zacks Premium and scrapes tickers added to the #1 Buy List today. No upload cap. Clears the sheet before each run. Exits cleanly (code 0) if no tickers were added today. Requires `ZACKS_EMAIL` and `ZACKS_PASSWORD` secrets. Runs at 6:00 AM PST Mon-Sat.
 
 ## Environment Variables
 
