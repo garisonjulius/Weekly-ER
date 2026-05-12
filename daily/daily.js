@@ -1219,8 +1219,8 @@ async function main() {
         console.log(`⏭️ Skipping ${symbol}: Recom is null/missing`);
       } else if (rsiVal >= 70) {
         console.log(`⏭️ Skipping ${symbol}: RSI ${rsiVal} >= 70`);
-      } else if (recomVal >= 1.5) {
-        console.log(`⏭️ Skipping ${symbol}: Recom ${recomVal} >= 1.5`);
+      } else if (recomVal >= 2) {
+        console.log(`⏭️ Skipping ${symbol}: Recom ${recomVal} >= 2`);
       } else {
         await uploadRowToGoogleSheet(row);
         uploadedCount++;
