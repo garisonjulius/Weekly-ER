@@ -718,6 +718,41 @@ async function uploadRowToGoogleSheet(dataArray) {
   }
 }
 
+async function uploadRowsBatchToGoogleSheet(rows) {
+  if (rows.length === 0) return true;
+  try {
+    const sheets = await getAuthenticatedSheets();
+    const sheetId = await getSheetId(sheets, SPREADSHEET_ID, SHEET_NAME);
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            insertDimension: {
+              range: { sheetId, dimension: "ROWS", startIndex: 1, endIndex: 1 + rows.length },
+              inheritFromBefore: false,
+            },
+          },
+        ],
+      },
+    });
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `'${SHEET_NAME}'!A2`,
+      valueInputOption: "RAW",
+      requestBody: { values: rows },
+    });
+
+    console.log(`✅ Batch uploaded ${rows.length} rows to Google Sheets`);
+    return true;
+  } catch (error) {
+    console.error("❌ Error batch uploading to Google Sheets:", error.message);
+    return false;
+  }
+}
+
 // Scrape Zacks Buy List for tickers added today
 async function scrapeZacksBuylist(browser) {
   console.log("🔍 Scraping Zacks Buy List...");
@@ -1140,7 +1175,9 @@ async function main() {
   //   return;
   // }
 
-  await clearIndividualSheet();
+  if (!isZacksBuylistMode) {
+    await clearIndividualSheet();
+  }
 
   const browser = await createBrowser();
   let entries = [];
@@ -1198,6 +1235,7 @@ async function main() {
     const MAX_OUTPUT = isZacksBuylistMode ? Infinity : 25;
     let uploadedCount = 0;
     let totalScraped = 0;
+    const pendingRows = [];
 
     for (let i = 0; i < entries.length; i++) {
       if (uploadedCount >= MAX_OUTPUT) {
@@ -1220,7 +1258,11 @@ async function main() {
       } else if (recomVal >= 2) {
         console.log(`⏭️ Skipping ${symbol}: Recom ${recomVal} >= 2`);
       } else {
-        await uploadRowToGoogleSheet(row);
+        if (isZacksBuylistMode) {
+          pendingRows.push(row);
+        } else {
+          await uploadRowToGoogleSheet(row);
+        }
         uploadedCount++;
       }
 
@@ -1230,13 +1272,19 @@ async function main() {
       }
     }
 
+    if (isZacksBuylistMode && pendingRows.length > 0) {
+      pendingRows.sort((a, b) => parseFloat(a[27]) - parseFloat(b[27]));
+      console.log(`\n📊 Sorted ${pendingRows.length} rows by Recom`);
+      await uploadRowsBatchToGoogleSheet(pendingRows);
+    }
+
     console.log("\n🎉 All tickers scraped!");
     console.log(
       `📊 Total scraped: ${totalScraped}, Uploaded: ${uploadedCount}`,
     );
 
-    // Sort by Recom, then run Claude ratings
-    await sortSheetByRecom();
+    // Sort by Recom (non-buylist modes only — buylist rows are pre-sorted before insert)
+    if (!isZacksBuylistMode) await sortSheetByRecom();
     // await runClaudeRatings(uploadedCount);
 
     console.log("\n🏁 All done! Sheet is fully populated with ratings.");
