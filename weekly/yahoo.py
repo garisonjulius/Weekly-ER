@@ -11,7 +11,7 @@ try:
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-    from selenium.common.exceptions import TimeoutException
+    from selenium.common.exceptions import TimeoutException, InvalidSessionIdException, WebDriverException
     SELENIUM_AVAILABLE = True
 except ImportError:
     SELENIUM_AVAILABLE = False
@@ -30,7 +30,15 @@ def get_earnings_for_date(driver, date: str) -> list[tuple[str, str, str]]:
 
     while True:
         url = f"https://finance.yahoo.com/calendar/earnings?day={date}&offset={offset}&size={page_size}"
-        driver.get(url)
+        for attempt in range(3):
+            try:
+                driver.get(url)
+                break
+            except TimeoutException:
+                if attempt < 2:
+                    time.sleep(5)
+                else:
+                    return results
 
         wait = WebDriverWait(driver, 15)
         try:
@@ -104,27 +112,47 @@ def get_earnings_tickers(start_date: str, num_days: int = 1) -> list[tuple[str, 
     # Generate list of dates
     dates = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(num_days)]
 
-    # Setup headless Chrome
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--window-size=1920,1080")
-    options.add_argument(
-        "user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-    )
+    def make_driver():
+        options = Options()
+        options.add_argument("--headless")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--blink-settings=imagesEnabled=false")
+        options.add_argument(
+            "user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        )
+        options.page_load_strategy = "none"
+        d = webdriver.Chrome(options=options)
+        d.set_page_load_timeout(45)
+        return d
 
-    driver = webdriver.Chrome(options=options)
+    driver = make_driver()
     all_results = []
 
     try:
-        for date in dates:
+        for i, date in enumerate(dates):
+            if i > 0:
+                time.sleep(8)
             print(f"Fetching {date}...")
-            results = get_earnings_for_date(driver, date)
+            try:
+                results = get_earnings_for_date(driver, date)
+            except (InvalidSessionIdException, WebDriverException):
+                print(f"  Browser session died, restarting for {date}...")
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                time.sleep(10)
+                driver = make_driver()
+                results = get_earnings_for_date(driver, date)
             all_results.extend(results)
     finally:
-        driver.quit()
+        try:
+            driver.quit()
+        except Exception:
+            pass
 
     return all_results
 
