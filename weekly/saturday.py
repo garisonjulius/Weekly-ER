@@ -40,7 +40,7 @@ def main():
     run(["git", "commit", "-m", f"Weekly earnings data for {next_monday}"], "Committing")
     run(["git", "push"], "Pushing to GitHub")
 
-    print("\n\nDone! GitHub Actions will run the rest on Sunday 6 AM PST.")
+    print("\n\nDone! GitHub Actions will run the rest on Saturday 9 AM PDT.")
 
 
 if __name__ == "__main__":

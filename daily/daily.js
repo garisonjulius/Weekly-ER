@@ -316,87 +316,93 @@ async function scrapeZacksData(ticker, browser) {
 
 // Scrape Finviz data for a single ticker
 async function scrapeFinvizData(ticker, browser) {
-  console.log(`🔍 Scraping Finviz data for ${ticker}...`);
+  const MAX_RETRIES = 2;
 
-  try {
-    const finvizUrl = `https://finviz.com/quote.ashx?t=${ticker.toUpperCase()}&p=d`;
-    const finvizPage = await setupFinvizPage(browser);
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 1) {
+      console.log(`🔄 Retry ${attempt}/${MAX_RETRIES} for Finviz ${ticker}...`);
+      await wait(7000);
+    }
+    console.log(`🔍 Scraping Finviz data for ${ticker}${attempt > 1 ? ` (attempt ${attempt})` : ""}...`);
 
-    await finvizPage.goto(finvizUrl, {
-      waitUntil: "domcontentloaded",
-      timeout: 45000,
-    });
+    try {
+      const finvizUrl = `https://finviz.com/quote.ashx?t=${ticker.toUpperCase()}&p=d`;
+      const finvizPage = await setupFinvizPage(browser);
 
-    await wait(5000);
+      await finvizPage.goto(finvizUrl, {
+        waitUntil: "domcontentloaded",
+        timeout: 45000,
+      });
 
-    const { pageText, companyName } = await finvizPage.evaluate(() => {
-      const text = document.body.textContent || document.body.innerText;
-      let name = null;
-      const title = document.title || "";
-      const titleMatch = title.match(/^[A-Z]{1,5}\s+(.+?)\s+Stock\s+Quote/);
-      if (titleMatch) {
-        name = titleMatch[1].trim();
-      }
-      if (!name) {
-        const rows = document.querySelectorAll(".fullview-title tr");
-        if (rows.length > 1) name = rows[1]?.textContent?.trim() || null;
-      }
-      if (!name) {
-        const broadMatch = title.match(/^\S+\s+(.+?)\s+Stock/);
-        if (broadMatch) name = broadMatch[1].trim();
-      }
-      if (name) name = name.replace(/^[\s\-–—]+|[\s\-–—]+$/g, "").trim();
-      return { pageText: text, companyName: name };
-    });
+      await wait(5000);
 
-    await finvizPage.close();
+      const { pageText, companyName } = await finvizPage.evaluate(() => {
+        const text = document.body.textContent || document.body.innerText;
+        let name = null;
+        const title = document.title || "";
+        const titleMatch = title.match(/^[A-Z]{1,5}\s+(.+?)\s+Stock\s+Quote/);
+        if (titleMatch) {
+          name = titleMatch[1].trim();
+        }
+        if (!name) {
+          const rows = document.querySelectorAll(".fullview-title tr");
+          if (rows.length > 1) name = rows[1]?.textContent?.trim() || null;
+        }
+        if (!name) {
+          const broadMatch = title.match(/^\S+\s+(.+?)\s+Stock/);
+          if (broadMatch) name = broadMatch[1].trim();
+        }
+        if (name) name = name.replace(/^[\s\-–—]+|[\s\-–—]+$/g, "").trim();
+        return { pageText: text, companyName: name };
+      });
 
-    const finvizData = {
-      companyName,
-      pe: pageText.match(/P\/E([\d.]+)/i)?.[1] || null,
-      forwardPE: pageText.match(/Forward P\/E([\d.]+)/i)?.[1] || null,
-      peg: pageText.match(/PEG([\d.]+)/i)?.[1] || null,
-      roe: pageText.match(/ROE([+-]?[\d.]+%)/i)?.[1] || null,
-      roic: pageText.match(/ROIC([+-]?[\d.]+%)/i)?.[1] || null,
-      profitMargin: pageText.match(/Profit Margin([+-]?[\d.]+%)/i)?.[1] || null,
-      debtEq: pageText.match(/Debt\/Eq([\d.]+)/i)?.[1] || null,
-      epsYOY: pageText.match(/EPS Y\/Y TTM([+-]?[\d.]+%)/i)?.[1] || null,
-      salesYOY: pageText.match(/Sales Y\/Y TTM([+-]?[\d.]+%)/i)?.[1] || null,
-      perfQuarter: pageText.match(/Perf Quarter([+-]?[\d.]+%)/i)?.[1] || null,
-      perfYear: pageText.match(/Perf Year([+-]?[\d.]+%)/i)?.[1] || null,
-      rsi: pageText.match(/RSI \(14\)([\d.]+)/i)?.[1] || null,
-      earnings:
-        pageText.match(/Earnings([A-Za-z]{3} [\d]{1,2} [AP]MC)/i)?.[1] || null,
-      recom: pageText.match(/Recom([\d.]+)/i)?.[1] || null,
-      changePercent: pageText.match(/Change([+-]?[\d.]+%)/i)?.[1] || null,
-    };
+      await finvizPage.close();
 
-    console.log(`✅ Finviz data for ${ticker}: ${JSON.stringify(finvizData)}`);
-    return finvizData;
-  } catch (error) {
-    console.error(
-      `❌ Error scraping Finviz data for ${ticker}:`,
-      error.message,
-    );
-    return {
-      companyName: null,
-      pe: null,
-      forwardPE: null,
-      peg: null,
-      roe: null,
-      roic: null,
-      profitMargin: null,
-      debtEq: null,
-      epsYOY: null,
-      salesYOY: null,
-      perfQuarter: null,
-      perfYear: null,
-      rsi: null,
-      earnings: null,
-      recom: null,
-      changePercent: null,
-    };
+      const finvizData = {
+        companyName,
+        pe: pageText.match(/P\/E([\d.]+)/i)?.[1] || null,
+        forwardPE: pageText.match(/Forward P\/E([\d.]+)/i)?.[1] || null,
+        peg: pageText.match(/PEG([\d.]+)/i)?.[1] || null,
+        roe: pageText.match(/ROE([+-]?[\d.]+%)/i)?.[1] || null,
+        roic: pageText.match(/ROIC([+-]?[\d.]+%)/i)?.[1] || null,
+        profitMargin: pageText.match(/Profit Margin([+-]?[\d.]+%)/i)?.[1] || null,
+        debtEq: pageText.match(/Debt\/Eq([\d.]+)/i)?.[1] || null,
+        epsYOY: pageText.match(/EPS Y\/Y TTM([+-]?[\d.]+%)/i)?.[1] || null,
+        salesYOY: pageText.match(/Sales Y\/Y TTM([+-]?[\d.]+%)/i)?.[1] || null,
+        perfQuarter: pageText.match(/Perf Quarter([+-]?[\d.]+%)/i)?.[1] || null,
+        perfYear: pageText.match(/Perf Year([+-]?[\d.]+%)/i)?.[1] || null,
+        rsi: pageText.match(/RSI \(14\)([\d.]+)/i)?.[1] || null,
+        earnings:
+          pageText.match(/Earnings([A-Za-z]{3} [\d]{1,2} [AP]MC)/i)?.[1] || null,
+        recom: pageText.match(/Recom([\d.]+)/i)?.[1] || null,
+        changePercent: pageText.match(/Change([+-]?[\d.]+%)/i)?.[1] || null,
+      };
+
+      console.log(`✅ Finviz data for ${ticker}: ${JSON.stringify(finvizData)}`);
+      return finvizData;
+    } catch (error) {
+      console.error(`❌ Error scraping Finviz data for ${ticker} (attempt ${attempt}/${MAX_RETRIES}):`, error.message);
+    }
   }
+
+  return {
+    companyName: null,
+    pe: null,
+    forwardPE: null,
+    peg: null,
+    roe: null,
+    roic: null,
+    profitMargin: null,
+    debtEq: null,
+    epsYOY: null,
+    salesYOY: null,
+    perfQuarter: null,
+    perfYear: null,
+    rsi: null,
+    earnings: null,
+    recom: null,
+    changePercent: null,
+  };
 }
 
 // Scrape rows from the current Yahoo Finance losers table
@@ -529,7 +535,13 @@ async function scrapeYahooLosers(browser, retries = 2, url = "https://finance.ya
         );
         if (!nextBtn) break;
         pageNum++;
-        await nextBtn.click();
+        try {
+          await nextBtn.scrollIntoView();
+          await nextBtn.click();
+        } catch (clickErr) {
+          console.log(`⚠️ Could not click next page (${clickErr.message}) — using ${allResults.length} candidates`);
+          break;
+        }
         await wait(5000);
         const pageResults = await scrapeYahooTableRows(page);
         if (pageResults.length === 0) break;

@@ -1,7 +1,7 @@
 name: Weekly Earnings Scrape
 
 on:
-  workflow_dispatch: # Triggered by cron-job.org at 6:00 AM PST Sunday
+  workflow_dispatch: # Triggered by cron-job.org at 9:00 AM PDT Saturday (16:00 UTC) — adjust for DST (see CLAUDE.md)
 
 jobs:
   scrape:

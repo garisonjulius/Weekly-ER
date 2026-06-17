@@ -1,9 +1,7 @@
 name: Saturday Weekly Prep
 
 on:
-  schedule:
-    - cron: '0 15 * * 6'  # Saturday 8:00 AM PDT (UTC-7) — adjust for DST (see CLAUDE.md)
-  workflow_dispatch:
+  workflow_dispatch: # Triggered by cron-job.org at 8:00 AM PDT Saturday (15:00 UTC) — adjust for DST (see CLAUDE.md)
 
 jobs:
   prep:
