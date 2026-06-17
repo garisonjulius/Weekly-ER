@@ -5,10 +5,11 @@ Automated stock earnings scraper. Scrapes tickers from Zacks and Yahoo Finance, 
 ## Project Structure
 
 ```
-weekly/         # Saturday prep scripts (run locally before Sunday GH Actions)
+weekly/         # Saturday prep scripts (fully automated via GitHub Actions)
 daily/          # Daily stock scraper (runs via GitHub Actions Mon-Fri)
 .github/workflows/
-  weekly_scrape.yml     # Runs every Sunday 6 AM PST
+  saturday_prep.yml     # Triggered by cron-job.org at 8:00 AM PDT Saturday (15:00 UTC)
+  weekly_scrape.yml     # Triggered by cron-job.org at 9:00 AM PDT Saturday (16:00 UTC)
   daily_scrape.yml      # Triggered by cron-job.org at 6:45 AM, 9:30 AM, and 12:00 PM PST Mon-Fri
   52w_low_scrape.yml    # Triggered by cron-job.org at 9:00 AM PST Mon-Fri
   zacks_buylist.yml     # Triggered by cron-job.org at 6:00 AM PST Mon-Sat
@@ -26,22 +27,26 @@ cron-job.org schedules are in UTC. When the US clocks change, update the cron-jo
 Always run from the project root:
 
 ```bash
-# Saturday: prep next week's earnings data, commit & push to GitHub
-python weekly/saturday.py
-
 # Daily scraper (normally runs via GitHub Actions)
 node daily/daily.js --losers
+
+# Manually trigger saturday prep if needed (normally automated)
+python weekly/saturday.py
 ```
 
-## Weekly Flow (saturday.py)
+## Weekly Flow (fully automated on Saturday)
 
+All steps run automatically via cron-job.org → GitHub Actions. No manual steps required.
+
+### Saturday 8:00 AM PDT — `saturday_prep.yml` → `saturday.py`
 1. Scrapes Zacks earnings calendar for next week → `StockCode - Zacks_AMC_BMO.csv`
 2. Scrapes Yahoo Finance earnings (5 days) → `Yahoo_Ticker`
 3. Commits and pushes both files to GitHub
-4. GitHub Actions picks up on Sunday 6 AM PST and runs the rest:
-   - `reset.py` — clears Google Sheets
-   - `merge_tickers.py` — merges CSVs, generates upload data
-   - `run_robots.py` — triggers Browse AI robots via API
+
+### Saturday 9:00 AM PDT — `weekly_scrape.yml`
+4. `reset.py` — clears Google Sheets (Mon–Fri, Master_Tickers, robot tabs)
+5. `merge_tickers.py` — merges CSVs, generates URL lists, uploads to Master_Tickers sheet
+6. `run_robots.py` — fires Browse AI bulk scrape jobs (Zacks, Finviz, Stock Analysis) asynchronously
 
 ## Daily Flows (daily.js)
 
