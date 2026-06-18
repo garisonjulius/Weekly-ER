@@ -50,7 +50,7 @@ All steps run automatically via cron-job.org → GitHub Actions. No manual steps
 
 ## Daily Flows (daily.js)
 
-All modes triggered via `workflow_dispatch` by cron-job.org. Each scrapes Zacks + Finviz per ticker using Puppeteer, filters, and uploads to Google Sheets (Spreadsheet ID: `1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ`).
+All modes triggered via `workflow_dispatch` by cron-job.org. Each scrapes Zacks + Finviz per ticker using Puppeteer, filters, and uploads to Google Sheets (ID via `SPREADSHEET_ID` env var).
 
 Filters applied before uploading (all modes):
 - **Recom < 1.5** (analyst recommendation, index 27)
