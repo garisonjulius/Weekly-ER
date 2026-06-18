@@ -17,7 +17,7 @@ if (!ANTHROPIC_API_KEY) {
   console.error("❌ CLAUDE_API_KEY environment variable is not set");
   process.exit(1);
 }
-const SPREADSHEET_ID = "1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ";
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID || "1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ";
 let SHEET_NAME = "Price Down";
 
 // Claude writes rating to column AE
