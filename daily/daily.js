@@ -138,9 +138,8 @@ async function scrapeZacksData(ticker, browser) {
       await wait(5000);
     }
     console.log(`🔍 Scraping Zacks data for ${ticker}${attempt > 1 ? ` (attempt ${attempt})` : ""}...`);
+    const page = await setupPage(browser);
     try {
-      const page = await setupPage(browser);
-
       await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
       await wait(5000);
 
@@ -304,11 +303,12 @@ async function scrapeZacksData(ticker, browser) {
       };
       });
 
-      await page.close();
       console.log(`✅ Successfully scraped Zacks data for ${ticker}`);
       return data;
     } catch (error) {
       console.error(`❌ Error scraping Zacks data for ${ticker} (attempt ${attempt}/${MAX_RETRIES}):`, error.message);
+    } finally {
+      await page.close();
     }
   }
   return ZACKS_NULL;
@@ -325,10 +325,9 @@ async function scrapeFinvizData(ticker, browser) {
     }
     console.log(`🔍 Scraping Finviz data for ${ticker}${attempt > 1 ? ` (attempt ${attempt})` : ""}...`);
 
+    const finvizUrl = `https://finviz.com/quote.ashx?t=${ticker.toUpperCase()}&p=d`;
+    const finvizPage = await setupFinvizPage(browser);
     try {
-      const finvizUrl = `https://finviz.com/quote.ashx?t=${ticker.toUpperCase()}&p=d`;
-      const finvizPage = await setupFinvizPage(browser);
-
       await finvizPage.goto(finvizUrl, {
         waitUntil: "domcontentloaded",
         timeout: 45000,
@@ -356,8 +355,6 @@ async function scrapeFinvizData(ticker, browser) {
         return { pageText: text, companyName: name };
       });
 
-      await finvizPage.close();
-
       const finvizData = {
         companyName,
         pe: pageText.match(/P\/E([\d.]+)/i)?.[1] || null,
@@ -382,6 +379,8 @@ async function scrapeFinvizData(ticker, browser) {
       return finvizData;
     } catch (error) {
       console.error(`❌ Error scraping Finviz data for ${ticker} (attempt ${attempt}/${MAX_RETRIES}):`, error.message);
+    } finally {
+      await finvizPage.close();
     }
   }
 
