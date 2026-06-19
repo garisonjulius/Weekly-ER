@@ -536,7 +536,6 @@ async function scrapeYahooLosers(browser, retries = 2, url = "https://finance.ya
         if (!nextBtn) break;
         pageNum++;
         try {
-          await nextBtn.scrollIntoView();
           await nextBtn.click();
         } catch (clickErr) {
           console.log(`⚠️ Could not click next page (${clickErr.message}) — using ${allResults.length} candidates`);

@@ -53,7 +53,7 @@ All steps run automatically via cron-job.org → GitHub Actions. No manual steps
 All modes triggered via `workflow_dispatch` by cron-job.org. Each scrapes Zacks + Finviz per ticker using Puppeteer, filters, and uploads to Google Sheets (ID via `SPREADSHEET_ID` env var).
 
 Filters applied before uploading (all modes):
-- **Recom < 1.5** (analyst recommendation, index 27)
+- **Recom < 2** (analyst recommendation, index 27)
 - **RSI < 70** (relative strength index, index 24)
 
 Zacks scrape retries once (5s delay) before falling back to null values.
