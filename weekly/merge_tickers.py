@@ -47,6 +47,9 @@ def merge_tickers():
     """
     master = {}  # ticker -> earnings_time
 
+    def is_valid(call_time):
+        return call_time in ("AMC", "BMO")
+
     # Parse Yahoo_Ticker file (CSV format: ticker, call_time, date)
     try:
         with open("Yahoo_Ticker", "r") as f:
@@ -57,7 +60,7 @@ def merge_tickers():
                     continue
                 ticker = row[0].strip().upper()
                 call_time = row[1].strip().upper()
-                if ticker and ticker not in master:
+                if ticker:
                     master[ticker] = call_time
     except FileNotFoundError:
         print("Warning: Yahoo_Ticker not found")
@@ -78,10 +81,18 @@ def merge_tickers():
                     ticker = parts[0].strip().upper()
                     call_time = parts[1].strip().upper()
                     if ticker and call_time:
-                        # Zacks values take priority over Yahoo
-                        master[ticker] = call_time
+                        # Zacks wins if it has a valid value; otherwise keep existing
+                        if is_valid(call_time) or ticker not in master:
+                            master[ticker] = call_time
     except FileNotFoundError:
         print("Warning: StockCode - Zacks_AMC_BMO.csv not found")
+
+    # Drop tickers without a confirmed call time
+    before = len(master)
+    master = {t: ct for t, ct in master.items() if is_valid(ct)}
+    dropped = before - len(master)
+    if dropped:
+        print(f"Dropped {dropped} tickers with no confirmed call time")
 
     # Write master list to file
     with open("Master_Tickers", "w") as f:
