@@ -77,13 +77,21 @@ def scrape_day_table(driver):
 
 def scrape_next_week(driver):
     """Navigate to next week and scrape all 5 days."""
-    print("Loading Zacks earnings calendar...")
-    driver.get(ZACKS_URL)
+    driver.set_page_load_timeout(60)
 
-    # Wait for the page to fully load
-    WebDriverWait(driver, 15).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "#prev_next"))
-    )
+    print("Loading Zacks earnings calendar...")
+    for attempt in range(1, 4):
+        try:
+            driver.get(ZACKS_URL)
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "#prev_next"))
+            )
+            break
+        except Exception as e:
+            print(f"  Load attempt {attempt}/3 failed: {e}")
+            if attempt == 3:
+                raise
+            time.sleep(10)
     time.sleep(3)
 
     # Click "Next Week" button twice to go 2 weeks ahead
