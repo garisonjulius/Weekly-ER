@@ -32,8 +32,11 @@ Always run from the project root:
 # Daily scraper (normally runs via GitHub Actions)
 node daily/daily.js --losers
 
-# Manually trigger saturday prep if needed (normally automated)
+# Manually trigger Saturday prep if needed (normally automated)
 python weekly/saturday.py
+
+# Manually trigger mid-weekly scrape if needed (normally automated)
+python mid-weekly/thursday.py
 ```
 
 ## Weekly Flow (fully automated on Saturday)
@@ -41,13 +44,13 @@ python weekly/saturday.py
 All steps run automatically via cron-job.org → GitHub Actions. No manual steps required.
 
 ### Saturday 8:00 AM PDT — `saturday_prep.yml` → `saturday.py`
-1. Scrapes Zacks earnings calendar for next week → `StockCode - Zacks_AMC_BMO.csv`
-2. Scrapes Yahoo Finance earnings (5 days) → `Yahoo_Ticker`
+1. `next_week_tickers.py` — scrapes Zacks earnings calendar (clicks "Next Week" twice from Saturday to reach the upcoming work week) → `StockCode - Zacks_AMC_BMO.csv`
+2. `yahoo.py` — scrapes Yahoo Finance earnings (5 days from next Monday) → `Yahoo_Ticker`
 3. Commits and pushes both files to GitHub
 
 ### Saturday 9:00 AM PDT — `weekly_scrape.yml`
-4. `reset.py` — clears Google Sheets (Mon–Fri, Master_Tickers, robot tabs)
-5. `merge_tickers.py` — merges CSVs, generates URL lists, uploads to Master_Tickers sheet
+4. `reset.py` — full clear: Mon, Tue, Wed, Thur, Fri, Master_Tickers; row 3+ clear: Zacks_Robot, Finviz_Robot, Stock_Analysis_Robot, Image_Raw
+5. `merge_tickers.py` — merges CSVs, keeps only confirmed AMC/BMO tickers, generates URL lists, uploads to Master_Tickers sheet
 6. `run_robots.py` — fires Browse AI bulk scrape jobs (Zacks, Finviz, Stock Analysis) asynchronously
 
 ## Mid-Weekly Flow (fully automated on Thursday)
@@ -133,7 +136,8 @@ After the Bottom Line in Step 2, each stock is assigned one of:
 
 - `CLAUDE_API_KEY` — Anthropic API key
 - `GOOGLE_CREDENTIALS_PATH` — path to Google service account credentials JSON
-- `BROWSE_AI_API_KEY` — Browse AI API key (weekly workflow only)
+- `SPREADSHEET_ID` — Google Sheets ID (defaults to `1v5FbfCuueVbqhKU74Nyd9DKXheI5uXTJ9oIYwX6_-mQ` if not set)
+- `BROWSE_AI_API_KEY` — Browse AI API key (weekly and mid-weekly workflows)
 - `SLACK_WEBHOOK_URL` — Slack notification webhook (GitHub Actions only)
 - `ZACKS_EMAIL` — Zacks Premium login email (zacks-buylist workflow only)
 - `ZACKS_PASSWORD` — Zacks Premium login password (zacks-buylist workflow only)
