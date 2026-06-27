@@ -1,4 +1,3 @@
-import argparse
 import csv
 import sys
 from config import SPREADSHEET_ID
@@ -111,10 +110,6 @@ def generate_url_csvs(tickers):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=None, help="Cap newly confirmed tickers sent to Browse AI")
-    args = parser.parse_args()
-
     print("Reading existing Master_Tickers from Google Sheets...")
     existing = read_master_tickers_from_sheet()
     print(f"Found {len(existing)} existing tickers in sheet")
@@ -134,16 +129,11 @@ def main():
     for ticker, ct in sorted(newly_confirmed.items()):
         print(f"  {ticker}: {ct}")
 
-    to_process = newly_confirmed
-    if args.limit and len(newly_confirmed) > args.limit:
-        to_process = dict(sorted(newly_confirmed.items())[:args.limit])
-        print(f"\nLimit applied: processing {len(to_process)} of {len(newly_confirmed)} newly confirmed tickers")
-
     print("\nAppending newly confirmed tickers to Master_Tickers sheet...")
-    append_to_master_tickers_sheet(to_process)
+    append_to_master_tickers_sheet(newly_confirmed)
 
     print("\nGenerating URL CSVs for newly confirmed tickers...")
-    generate_url_csvs(to_process.keys())
+    generate_url_csvs(newly_confirmed.keys())
 
     if not newly_confirmed:
         print("\nNo newly confirmed tickers — Browse AI will have nothing to process.")

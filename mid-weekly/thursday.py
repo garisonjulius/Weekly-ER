@@ -1,9 +1,8 @@
-import argparse
 import subprocess
 import sys
 from datetime import date, timedelta
 
-# Run from project root: python mid-weekly/thursday.py [--limit N]
+# Run from project root: python mid-weekly/thursday.py
 
 
 def run(cmd, description):
@@ -27,14 +26,8 @@ def get_next_monday():
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--limit", type=int, default=None, help="Cap newly confirmed tickers sent to Browse AI")
-    args = parser.parse_args()
-
     next_monday = get_next_monday()
     print(f"Upcoming Monday: {next_monday}")
-    if args.limit:
-        print(f"Limit: {args.limit} tickers")
 
     # Step 1: Re-scrape Zacks (one week ahead click)
     run([sys.executable, "mid-weekly/next_week_tickers.py"], "Scraping Zacks earnings calendar")
@@ -46,10 +39,7 @@ def main():
     )
 
     # Step 3: Compare against Master_Tickers sheet, find newly confirmed, update sheet, generate URL CSVs
-    update_cmd = [sys.executable, "mid-weekly/update_tickers.py"]
-    if args.limit:
-        update_cmd += ["--limit", str(args.limit)]
-    run(update_cmd, "Updating Master_Tickers and generating URL CSVs")
+    run([sys.executable, "mid-weekly/update_tickers.py"], "Updating Master_Tickers and generating URL CSVs")
 
     # Step 4: Fire Browse AI bulk runs for newly confirmed tickers
     run([sys.executable, "mid-weekly/run_robots.py"], "Running Browse AI bulk scrapes")

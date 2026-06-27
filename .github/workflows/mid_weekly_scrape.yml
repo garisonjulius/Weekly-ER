@@ -2,11 +2,6 @@ name: Mid-Weekly Earnings Scrape
 
 on:
   workflow_dispatch: # Triggered by cron-job.org at 9:00 AM PST Thursday (17:00 UTC) — adjust for DST (see CLAUDE.md)
-    inputs:
-      limit:
-        description: "Cap newly confirmed tickers (leave blank for no limit)"
-        required: false
-        default: ""
 
 jobs:
   scrape:
@@ -35,12 +30,7 @@ jobs:
 
       - name: Run thursday.py
         id: thursday
-        run: |
-          LIMIT_ARG=""
-          if [ -n "${{ github.event.inputs.limit }}" ]; then
-            LIMIT_ARG="--limit ${{ github.event.inputs.limit }}"
-          fi
-          python mid-weekly/thursday.py $LIMIT_ARG 2>&1 | tee /tmp/thursday_output.txt
+        run: python mid-weekly/thursday.py 2>&1 | tee /tmp/thursday_output.txt
         env:
           GOOGLE_CREDENTIALS_PATH: credentials.json
           BROWSE_AI_API_KEY: ${{ secrets.BROWSE_AI_API_KEY }}
