@@ -1,3 +1,4 @@
+import argparse
 import csv
 import sys
 from config import SPREADSHEET_ID
@@ -70,25 +71,18 @@ def merge_scraped_tickers():
     return {t: ct for t, ct in merged.items() if is_valid(ct)}
 
 
-def update_master_tickers_sheet(all_tickers):
-    """Rewrite Master_Tickers sheet with the full updated ticker list."""
+def append_to_master_tickers_sheet(new_tickers):
+    """Append newly confirmed tickers to the bottom of Master_Tickers."""
     service = get_sheets_service()
-    service.spreadsheets().values().clear(
+    values = [[ticker, call_time] for ticker, call_time in sorted(new_tickers.items())]
+    service.spreadsheets().values().append(
         spreadsheetId=SPREADSHEET_ID,
-        range="'Master_Tickers'!A:B"
-    ).execute()
-
-    values = [["Ticker", "Earnings Call"]]
-    for ticker, call_time in sorted(all_tickers.items()):
-        values.append([ticker, call_time])
-
-    service.spreadsheets().values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range="'Master_Tickers'!A1",
+        range="'Master_Tickers'!A:B",
         valueInputOption="RAW",
+        insertDataOption="INSERT_ROWS",
         body={"values": values}
     ).execute()
-    print(f"Updated Master_Tickers with {len(all_tickers)} total tickers")
+    print(f"Appended {len(new_tickers)} newly confirmed tickers to Master_Tickers")
 
 
 def generate_url_csvs(tickers):
@@ -117,6 +111,10 @@ def generate_url_csvs(tickers):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--limit", type=int, default=None, help="Cap newly confirmed tickers sent to Browse AI")
+    args = parser.parse_args()
+
     print("Reading existing Master_Tickers from Google Sheets...")
     existing = read_master_tickers_from_sheet()
     print(f"Found {len(existing)} existing tickers in sheet")
@@ -136,27 +134,16 @@ def main():
     for ticker, ct in sorted(newly_confirmed.items()):
         print(f"  {ticker}: {ct}")
 
-    # Build updated master: start from existing, apply scraped changes
-    updated_master = dict(existing)
-    for ticker, call_time in scraped.items():
-        existing_ct = existing.get(ticker, "")
-        if existing_ct != call_time:
-            if not is_valid(existing_ct):
-                # New or previously unconfirmed
-                updated_master[ticker] = call_time
-            else:
-                # Call time changed — update in sheet but don't re-send to Browse AI
-                print(f"  Call time updated for {ticker}: {existing_ct} → {call_time}")
-                updated_master[ticker] = call_time
+    to_process = newly_confirmed
+    if args.limit and len(newly_confirmed) > args.limit:
+        to_process = dict(sorted(newly_confirmed.items())[:args.limit])
+        print(f"\nLimit applied: processing {len(to_process)} of {len(newly_confirmed)} newly confirmed tickers")
 
-    # Keep only valid call times in the sheet
-    updated_master = {t: ct for t, ct in updated_master.items() if is_valid(ct)}
-
-    print("\nUpdating Master_Tickers sheet...")
-    update_master_tickers_sheet(updated_master)
+    print("\nAppending newly confirmed tickers to Master_Tickers sheet...")
+    append_to_master_tickers_sheet(to_process)
 
     print("\nGenerating URL CSVs for newly confirmed tickers...")
-    generate_url_csvs(newly_confirmed.keys())
+    generate_url_csvs(to_process.keys())
 
     if not newly_confirmed:
         print("\nNo newly confirmed tickers — Browse AI will have nothing to process.")
